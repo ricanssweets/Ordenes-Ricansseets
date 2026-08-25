@@ -677,6 +677,21 @@ async function subscribePush(){
   }catch(e){}
 }
 
+async function testPush(){
+  if(!USE_BACKEND){ toast('Usa la versión de Netlify para probar el aviso.'); return; }
+  toast('Enviando notificación de prueba…');
+  try{ await subscribePush(); }catch(e){}
+  try{
+    const r = await fetch(API_BASE + '/push', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'test' })
+    });
+    const d = await r.json();
+    toast(d && d.sent ? 'Prueba enviada ✓ Revisa el teléfono.' : 'No llegó. Acepta las notificaciones y espera unos segundos.');
+  }catch(e){ toast('Error al enviar la prueba.'); }
+}
+
 function getClientId(){ return localStorage.getItem(GCAL_CLIENTID_KEY) || ''; }
 
 // El token de acceso se guarda en sessionStorage (no en localStorage):
@@ -1272,7 +1287,8 @@ function checkNotifications(){
     notice.textContent = 'Notificaciones bloqueadas por el navegador. Revisa la app para ver pedidos próximos (funciona igual sin ellas).';
     return;
   }
-  notice.textContent = 'Notificaciones activadas ✓ — se avisan al abrir la app cuando falten 2 días o menos.';
+  notice.innerHTML = 'Notificaciones activadas ✓ — se avisan al abrir la app cuando falten 2 días o menos. <button class="link" id="testNotif">Probar aviso</button>';
+  document.getElementById('testNotif').addEventListener('click', testPush);
   fireDueNotifications();
   subscribePush();
 }
