@@ -1,0 +1,11 @@
+# Configuración de Netlify
+# La app es estática (publish ".") + funciones serverless en netlify/functions.
+# Los secretos NO van aquí: se configuran como variables de entorno en Netlify
+# (UI → Site configuration → Environment variables), con alcance "Functions".
+
+[build]
+  command = "npm install"
+  publish = "."
+
+[functions]
+  directory = "netlify/functions"

@@ -600,6 +600,83 @@ let editingId = null;
 let gTokenClient = null;
 let gAccessToken = null;
 
+// --- Backend (Netlify Functions) ---
+let USE_BACKEND = false;
+let API_BASE = '/.netlify/functions';
+let PUSH_PUBLIC_KEY = '';
+let BACKEND_GOOGLE_CONNECTED = false;
+
+async function detectBackend(){
+  try{
+    const res = await fetch(API_BASE + '/health', { cache: 'no-store' });
+    if(!res.ok) return null;
+    const data = await res.json();
+    if(data && data.ok){
+      USE_BACKEND = true;
+      BACKEND_GOOGLE_CONNECTED = !!data.googleConnected;
+      PUSH_PUBLIC_KEY = data.pushPublicKey || '';
+      return data;
+    }
+  }catch(e){}
+  return null;
+}
+
+async function pullOrdersFromBackend(){
+  try{
+    const res = await fetch(API_BASE + '/orders', { cache: 'no-store' });
+    if(!res.ok) return;
+    const data = await res.json();
+    if(Array.isArray(data.orders) && data.orders.length > 0){
+      orders = data.orders;
+      saveOrders(); // refleja en localStorage local
+    } else if(orders.length > 0){
+      // backend vacío: sube los pedidos locales
+      syncToBackend();
+    }
+  }catch(e){}
+}
+
+let syncTimer = null;
+function syncToBackend(){
+  if(!USE_BACKEND) return;
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(() => {
+    fetch(API_BASE + '/orders', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ orders })
+    }).catch(() => {});
+  }, 400);
+}
+
+function urlBase64ToUint8Array(base64String){
+  const padding = '='.repeat((4 - base64String.length % 4) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const raw = atob(base64);
+  const out = new Uint8Array(raw.length);
+  for(let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+  return out;
+}
+
+async function subscribePush(){
+  if(!USE_BACKEND || !PUSH_PUBLIC_KEY) return;
+  try{
+    const reg = await navigator.serviceWorker.ready;
+    let sub = await reg.pushManager.getSubscription();
+    if(!sub){
+      sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(PUSH_PUBLIC_KEY)
+      });
+    }
+    await fetch(API_BASE + '/push', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'subscribe', subscription: sub })
+    });
+  }catch(e){}
+}
+
 function getClientId(){ return localStorage.getItem(GCAL_CLIENTID_KEY) || ''; }
 
 // El token de acceso se guarda en sessionStorage (no en localStorage):
@@ -628,18 +705,23 @@ function updateGcalBar(){
   const bar = document.getElementById('gcalBar');
   const status = document.getElementById('gcalStatus');
   const btn = document.getElementById('gcalBtn');
-  if(gAccessToken){
+  const connected = USE_BACKEND ? BACKEND_GOOGLE_CONNECTED : !!gAccessToken;
+  if(connected){
     bar.classList.add('connected');
     status.textContent = '📅 Calendario conectado';
     btn.textContent = 'Reconectar';
-  } else if(getClientId()){
-    bar.classList.remove('connected');
-    status.textContent = '📅 Toca para conectar tu calendario';
-    btn.textContent = 'Conectar';
   } else {
     bar.classList.remove('connected');
-    status.textContent = '📅 Calendario no conectado';
-    btn.textContent = 'Configurar';
+    if(USE_BACKEND){
+      status.textContent = '📅 Conecta tu Google Calendar';
+      btn.textContent = 'Conectar';
+    } else if(getClientId()){
+      status.textContent = '📅 Toca para conectar tu calendario';
+      btn.textContent = 'Conectar';
+    } else {
+      status.textContent = '📅 Calendario no conectado';
+      btn.textContent = 'Configurar';
+    }
   }
 }
 
@@ -657,6 +739,7 @@ function closeGcalSheet(){
 }
 
 document.getElementById('gcalBtn').addEventListener('click', () => {
+  if(USE_BACKEND){ connectGoogle(); return; }
   if(!getClientId()){ openGcalSheet(); return; }
   connectGoogle();
 });
@@ -671,6 +754,10 @@ document.getElementById('gcalSaveBtn').addEventListener('click', () => {
 });
 
 function connectGoogle(){
+  if(USE_BACKEND){
+    window.location.href = API_BASE + '/auth';
+    return;
+  }
   const clientId = getClientId();
   if(!clientId){ openGcalSheet(); return; }
   if(!window.google || !google.accounts){
@@ -749,13 +836,44 @@ async function calendarFetch(method, path, body){
 }
 
 async function createCalendarEvent(order){
+  if(USE_BACKEND){
+    try{
+      const r = await fetch(API_BASE + '/calendar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'create', order })
+      });
+      const d = await r.json();
+      return d && d.ok && d.id ? d.id : null;
+    }catch(e){ return null; }
+  }
   const data = await calendarFetch('POST', '/calendars/primary/events', eventPayload(order));
   return data && data.id ? data.id : null;
 }
 async function updateCalendarEvent(eventId, order){
+  if(USE_BACKEND){
+    try{
+      await fetch(API_BASE + '/calendar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'update', order, eventId })
+      });
+    }catch(e){}
+    return;
+  }
   await calendarFetch('PATCH', '/calendars/primary/events/' + encodeURIComponent(eventId), eventPayload(order));
 }
 async function deleteCalendarEvent(eventId){
+  if(USE_BACKEND){
+    try{
+      const r = await fetch(API_BASE + '/calendar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'delete', eventId })
+      });
+      return await r.json();
+    }catch(e){ return null; }
+  }
   return await calendarFetch('DELETE', '/calendars/primary/events/' + encodeURIComponent(eventId));
 }
 
@@ -769,6 +887,7 @@ function loadOrders(){
 }
 function saveOrders(){
   localStorage.setItem(STORAGE_KEY, JSON.stringify(orders));
+  if(USE_BACKEND) syncToBackend();
 }
 
 // --- Utilidades de fecha / precio / teléfono ---
@@ -1145,7 +1264,7 @@ function checkNotifications(){
   if(Notification.permission === 'default'){
     notice.innerHTML = 'Activa las notificaciones para avisos 2 días antes de cada entrega. <button class="link" id="enableNotif">Activar</button>';
     document.getElementById('enableNotif').addEventListener('click', () => {
-      Notification.requestPermission().then(perm => { checkNotifications(); if(perm === 'granted') fireDueNotifications(); });
+      Notification.requestPermission().then(perm => { checkNotifications(); if(perm === 'granted'){ fireDueNotifications(); subscribePush(); } });
     });
     return;
   }
@@ -1155,6 +1274,7 @@ function checkNotifications(){
   }
   notice.textContent = 'Notificaciones activadas ✓ — se avisan al abrir la app cuando falten 2 días o menos.';
   fireDueNotifications();
+  subscribePush();
 }
 
 function fireDueNotifications(){
@@ -1301,11 +1421,28 @@ window.addEventListener('storage', (e) => {
 });
 
 // --- Inicialización ---
-gAccessToken = loadGcalToken();
-loadOrders();
-render();
-checkNotifications();
-updateGcalBar();
+async function init(){
+  await detectBackend();
+  gAccessToken = loadGcalToken();
+  loadOrders();
+  if(USE_BACKEND) await pullOrdersFromBackend();
+  render();
+  checkNotifications();
+  updateGcalBar();
+
+  // Volvemos del flujo OAuth de Google (solo en modo backend).
+  const params = new URLSearchParams(window.location.search);
+  if(params.get('gcal') === 'ok'){
+    BACKEND_GOOGLE_CONNECTED = true;
+    updateGcalBar();
+    toast('Calendario conectado ✓');
+    history.replaceState(null, '', window.location.pathname);
+  } else if(params.get('gcal') === 'error'){
+    toast('No se pudo conectar el calendario.');
+    history.replaceState(null, '', window.location.pathname);
+  }
+}
+init();
 </script>
 </body>
 </html>

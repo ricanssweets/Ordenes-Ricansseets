@@ -1,0 +1,9 @@
+{
+  "name": "ricans-sweets",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "@netlify/blobs": "^11.0.1",
+    "web-push": "^3.6.7"
+  }
+}

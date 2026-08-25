@@ -76,3 +76,35 @@ self.addEventListener('fetch', (e) => {
     })
   );
 });
+
+// --- Push (recordatorios de pedidos) ---
+self.addEventListener('push', (event) => {
+  let data = {};
+  try { data = event.data ? event.data.json() : {}; } catch (e) { data = {}; }
+
+  const title = data.title || "Rican's Sweets";
+  const options = {
+    body: data.body || 'Tienes pedidos próximos',
+    icon: './icon-192.png',
+    badge: './icon-192.png',
+    data: { url: data.url || './' }
+  };
+
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const url = (event.notification.data && event.notification.data.url) || './';
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
+      for (const c of list) {
+        if ('focus' in c) {
+          c.navigate(url);
+          return c.focus();
+        }
+      }
+      return clients.openWindow(url);
+    })
+  );
+});
