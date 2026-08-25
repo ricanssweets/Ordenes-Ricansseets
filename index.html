@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <title>Rican's Sweets by Fany — Pedidos</title>
+<meta name="description" content="Libro de pedidos de Rican's Sweets by Fany: organiza entregas, precios y sincroniza con Google Calendar.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700;9..144,900&family=Work+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -101,6 +102,54 @@
   .summary .pill.alert .num{ color: var(--urgent); }
   .summary .pill .lbl{ font-size:11px; color:var(--cream-dim); text-transform:uppercase; letter-spacing:.06em; }
 
+  /* Buscador, filtro y herramientas de respaldo */
+  .toolbar{
+    display:flex;
+    gap:8px;
+    margin: 0 0 10px;
+  }
+  .toolbar input[type=search]{
+    flex:1;
+    min-width:0;
+    background: var(--card);
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding: 10px 12px;
+    color: var(--cream);
+    font-size:14px;
+    font-family:'Work Sans', sans-serif;
+  }
+  .toolbar input[type=search]:focus{ outline:none; border-color:var(--gold); }
+  .toolbar select{
+    background: var(--card);
+    border:1px solid var(--line);
+    border-radius:10px;
+    color: var(--cream);
+    padding: 10px 8px;
+    font-size:13px;
+    font-family:'Work Sans', sans-serif;
+    cursor:pointer;
+  }
+  .data-actions{
+    display:flex;
+    gap:8px;
+    margin: 0 0 16px;
+    flex-wrap:wrap;
+  }
+  .data-actions button{
+    flex:1;
+    min-width:96px;
+    background: var(--card);
+    border:1px solid var(--line);
+    border-radius:10px;
+    color: var(--cream-dim);
+    padding: 9px 8px;
+    font-size:12px;
+    cursor:pointer;
+    font-family:'Work Sans', sans-serif;
+  }
+  .data-actions button:hover{ color: var(--gold-light); border-color: var(--gold); }
+
   .section-label{
     font-size:12px;
     text-transform:uppercase;
@@ -163,12 +212,14 @@
     line-height:1;
     color: var(--gold-light);
     transform: rotate(-6deg);
+    text-align:center;
+    padding:4px;
   }
   .order-card.urgent .stamp{
     border-color: var(--urgent);
     color: #FF9268;
   }
-  .stamp .d-num{ font-family:'Fraunces', serif; font-weight:700; font-size:17px; }
+  .stamp .d-num{ font-family:'Fraunces', serif; font-weight:700; font-size:15px; }
   .stamp .d-lbl{ font-size:8px; text-transform:uppercase; letter-spacing:.05em; }
 
   .order-info{
@@ -283,7 +334,7 @@
     color: var(--gold);
     margin-bottom:6px;
   }
-  .field input, .field textarea{
+  .field input, .field textarea, .field select{
     width:100%;
     background: var(--card);
     border: 1px solid var(--line);
@@ -293,7 +344,7 @@
     font-size:15px;
     font-family:'Work Sans', sans-serif;
   }
-  .field input:focus, .field textarea:focus{
+  .field input:focus, .field textarea:focus, .field select:focus{
     outline: none;
     border-color: var(--gold);
   }
@@ -345,6 +396,50 @@
   .gcal-bar button.link{
     background:none;border:none;color:var(--gold-light);text-decoration:underline;cursor:pointer;font-size:12.5px;padding:0;
   }
+
+  /* Toast */
+  .toast{
+    position: fixed;
+    left: 50%;
+    bottom: 96px;
+    transform: translateX(-50%) translateY(20px);
+    background: var(--card-2);
+    color: var(--cream);
+    border: 1px solid var(--gold);
+    border-radius: 12px;
+    padding: 12px 16px;
+    font-size: 13.5px;
+    z-index: 60;
+    display:flex;
+    align-items:center;
+    gap: 12px;
+    max-width: 90vw;
+    opacity:0;
+    pointer-events:none;
+    transition: opacity .25s ease, transform .25s ease;
+    box-shadow: 0 10px 30px rgba(0,0,0,.5);
+  }
+  .toast.show{ opacity:1; transform: translateX(-50%) translateY(0); pointer-events:auto; }
+  .toast .toast-action{ background:none;border:none;color:var(--gold-light);text-decoration:underline;cursor:pointer;font-size:13px;padding:0; }
+
+  /* Confirmación */
+  .confirm-modal{
+    position: fixed;
+    left:50%; top:50%;
+    transform: translate(-50%,-50%) scale(.96);
+    width: calc(100% - 40px);
+    max-width: 360px;
+    background: var(--card-2);
+    border: 1px solid var(--gold);
+    border-radius: 18px;
+    padding: 20px;
+    z-index: 41;
+    opacity:0; pointer-events:none;
+    transition: opacity .2s ease, transform .2s ease;
+  }
+  .confirm-modal.open{ opacity:1; transform: translate(-50%,-50%) scale(1); pointer-events:auto; }
+  .confirm-modal h2{ font-family:'Fraunces',serif; color: var(--gold-light); font-size:18px; margin:0 0 8px; text-align:center; }
+  .confirm-modal p{ color: var(--cream); font-size:14px; text-align:center; margin:0 0 16px; line-height:1.5; }
 </style>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <link rel="manifest" href="manifest.json">
@@ -380,12 +475,29 @@
     </div>
     <div class="pill alert">
       <span class="num" id="statUrgent">0</span>
-      <span class="lbl">En 2 días</span>
+      <span class="lbl">Urgentes</span>
     </div>
     <div class="pill">
       <span class="num" id="statWeek">0</span>
-      <span class="lbl">Esta semana</span>
+      <span class="lbl">Próx. 7 días</span>
     </div>
+  </div>
+
+  <div class="toolbar">
+    <input type="search" id="searchInput" placeholder="Buscar por nombre, teléfono o detalle…" aria-label="Buscar pedidos">
+    <select id="filterSelect" aria-label="Filtrar pedidos">
+      <option value="all">Todos</option>
+      <option value="pending">Pendientes</option>
+      <option value="done">Entregados</option>
+      <option value="urgent">Urgentes</option>
+    </select>
+  </div>
+
+  <div class="data-actions">
+    <button id="exportBtn" title="Descargar copia de seguridad completa">Respaldo</button>
+    <button id="exportCsvBtn" title="Descargar listado en formato Excel/CSV">CSV</button>
+    <button id="importBtn" title="Restaurar pedidos desde un respaldo JSON">Importar</button>
+    <input type="file" id="importFile" accept=".json,application/json" hidden>
   </div>
 
   <div id="listContainer"></div>
@@ -394,15 +506,15 @@
 <button class="fab" id="openAdd" aria-label="Añadir pedido">+</button>
 
 <div class="sheet-backdrop" id="backdrop"></div>
-<div class="sheet" id="sheet">
+<div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
   <h2 id="sheetTitle">Nuevo pedido</h2>
   <div class="field">
     <label for="fName">Nombre del cliente</label>
-    <input type="text" id="fName" placeholder="Ej. María Rivera">
+    <input type="text" id="fName" placeholder="Ej. María Rivera" autocomplete="name">
   </div>
   <div class="field">
     <label for="fPhone">Teléfono</label>
-    <input type="tel" id="fPhone" placeholder="Ej. 561-524-5454" maxlength="12">
+    <input type="tel" id="fPhone" placeholder="Ej. 561-524-5454" maxlength="12" inputmode="tel" autocomplete="tel">
   </div>
   <div class="field">
     <label for="fInfo">Detalles del pedido</label>
@@ -414,9 +526,13 @@
       <input type="date" id="fDate">
     </div>
     <div class="field">
-      <label for="fPrice">Precio ($)</label>
-      <input type="number" id="fPrice" inputmode="decimal" placeholder="0.00">
+      <label for="fTime">Hora</label>
+      <input type="time" id="fTime">
     </div>
+  </div>
+  <div class="field">
+    <label for="fPrice">Precio ($)</label>
+    <input type="number" id="fPrice" inputmode="decimal" step="0.01" min="0" placeholder="0.00">
   </div>
   <div class="sheet-actions">
     <button class="btn-cancel" id="cancelBtn">Cancelar</button>
@@ -425,8 +541,8 @@
 </div>
 
 <div class="sheet-backdrop" id="gcalBackdrop"></div>
-<div class="sheet" id="gcalSheet">
-  <h2>Conectar Google Calendar</h2>
+<div class="sheet" id="gcalSheet" role="dialog" aria-modal="true" aria-labelledby="gcalSheetTitle">
+  <h2 id="gcalSheetTitle">Conectar Google Calendar</h2>
   <div class="field">
     <label for="fClientId">Client ID de Google</label>
     <input type="text" id="fClientId" placeholder="Pega aquí tu Client ID (termina en .apps.googleusercontent.com)">
@@ -438,9 +554,22 @@
   </div>
 </div>
 
+<div class="sheet-backdrop" id="confirmBackdrop"></div>
+<div class="confirm-modal" id="confirmModal" role="dialog" aria-modal="true" aria-labelledby="confirmTitle">
+  <h2 id="confirmTitle">¿Estás seguro?</h2>
+  <p id="confirmMsg"></p>
+  <div class="sheet-actions">
+    <button class="btn-cancel" id="confirmCancel">Cancelar</button>
+    <button class="btn-save" id="confirmOk">Confirmar</button>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
 <script>
 const STORAGE_KEY = 'ricans_sweets_orders_v1';
 const GCAL_CLIENTID_KEY = 'ricans_sweets_gcal_clientid';
+const GCAL_TOKEN_KEY = 'ricans_sweets_gcal_token';
 let orders = [];
 let editingId = null;
 
@@ -449,6 +578,26 @@ let gTokenClient = null;
 let gAccessToken = null;
 
 function getClientId(){ return localStorage.getItem(GCAL_CLIENTID_KEY) || ''; }
+
+function loadGcalToken(){
+  try{
+    const raw = localStorage.getItem(GCAL_TOKEN_KEY);
+    if(!raw) return null;
+    const t = JSON.parse(raw);
+    if(t.token && t.expiresAt && Date.now() < t.expiresAt) return t.token;
+  }catch(e){}
+  localStorage.removeItem(GCAL_TOKEN_KEY);
+  return null;
+}
+function saveGcalToken(token, expiresIn){
+  try{
+    localStorage.setItem(GCAL_TOKEN_KEY, JSON.stringify({
+      token,
+      expiresAt: Date.now() + (expiresIn || 3600) * 1000
+    }));
+  }catch(e){}
+}
+function clearGcalToken(){ localStorage.removeItem(GCAL_TOKEN_KEY); }
 
 function updateGcalBar(){
   const bar = document.getElementById('gcalBar');
@@ -473,6 +622,7 @@ function openGcalSheet(){
   document.getElementById('fClientId').value = getClientId();
   document.getElementById('gcalBackdrop').classList.add('open');
   document.getElementById('gcalSheet').classList.add('open');
+  setTimeout(() => document.getElementById('fClientId').focus(), 250);
 }
 function closeGcalSheet(){
   document.getElementById('gcalBackdrop').classList.remove('open');
@@ -487,7 +637,7 @@ document.getElementById('gcalCancelBtn').addEventListener('click', closeGcalShee
 document.getElementById('gcalBackdrop').addEventListener('click', closeGcalSheet);
 document.getElementById('gcalSaveBtn').addEventListener('click', () => {
   const id = document.getElementById('fClientId').value.trim();
-  if(!id){ alert('Pega tu Client ID primero.'); return; }
+  if(!id){ toast('Pega tu Client ID primero.'); return; }
   localStorage.setItem(GCAL_CLIENTID_KEY, id);
   closeGcalSheet();
   connectGoogle();
@@ -497,30 +647,39 @@ function connectGoogle(){
   const clientId = getClientId();
   if(!clientId){ openGcalSheet(); return; }
   if(!window.google || !google.accounts){
-    alert('Google aún está cargando, intenta de nuevo en un segundo.');
+    toast('Google aún está cargando, intenta de nuevo en un segundo.');
     return;
   }
   gTokenClient = google.accounts.oauth2.initTokenClient({
     client_id: clientId,
     scope: 'https://www.googleapis.com/auth/calendar.events',
     callback: (resp) => {
-      if(resp.error){ alert('No se pudo conectar: ' + resp.error); return; }
+      if(resp.error){ toast('No se pudo conectar: ' + resp.error); return; }
       gAccessToken = resp.access_token;
+      saveGcalToken(resp.access_token, resp.expires_in);
       updateGcalBar();
+      toast('Calendario conectado ✓');
     },
   });
   gTokenClient.requestAccessToken();
 }
 
-async function addOrderToCalendar(order){
-  if(!gAccessToken) return;
-  const start = `${order.date}T09:00:00`;
-  const end = `${order.date}T10:00:00`;
-  const event = {
+function eventPayload(order){
+  const date = order.date;
+  const time = (order.time && /^\d{2}:\d{2}$/.test(order.time)) ? order.time : '09:00';
+  const [h, m] = time.split(':').map(Number);
+  const start = new Date(date + 'T00:00:00');
+  start.setHours(h, m, 0, 0);
+  const end = new Date(start.getTime() + 60 * 60000);
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const pad = n => String(n).padStart(2, '0');
+  const toLocal = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:00`;
+  const priceTxt = fmtPrice(order.price).replace('$', '');
+  return {
     summary: `Entrega: ${order.name} — Rican's Sweets by Fany`,
-    description: `${order.info || ''}${order.phone ? '\nTel: ' + order.phone : ''}${order.price ? '\nPrecio: $' + order.price : ''}`,
-    start: { dateTime: start, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone },
-    end: { dateTime: end, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone },
+    description: `${order.info || ''}${order.phone ? '\nTel: ' + order.phone : ''}${priceTxt ? '\nPrecio: $' + priceTxt : ''}`,
+    start: { dateTime: toLocal(start), timeZone: tz },
+    end: { dateTime: toLocal(end), timeZone: tz },
     reminders: {
       useDefault: false,
       overrides: [
@@ -529,49 +688,72 @@ async function addOrderToCalendar(order){
       ]
     }
   };
+}
+
+async function calendarFetch(method, path, body){
+  if(!gAccessToken) return null;
   try{
-    const res = await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events', {
-      method: 'POST',
+    const res = await fetch('https://www.googleapis.com/calendar/v3' + path, {
+      method,
       headers: {
         'Authorization': 'Bearer ' + gAccessToken,
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify(event)
+      body: body ? JSON.stringify(body) : undefined
     });
-    if(!res.ok){
-      const err = await res.json();
-      console.error('Error de calendario:', err);
-      if(res.status === 401){
-        gAccessToken = null;
-        updateGcalBar();
-        alert('Tu sesión de Google expiró, vuelve a conectar el calendario.');
-      }
+    if(res.status === 401){
+      gAccessToken = null;
+      clearGcalToken();
+      updateGcalBar();
+      toast('Tu sesión de Google expiró, reconecta el calendario.');
       return null;
     }
-    const data = await res.json();
-    return data.id;
+    if(!res.ok){
+      console.error('Error de calendario:', await res.json().catch(() => ({})));
+      return null;
+    }
+    if(res.status === 204) return { ok: true };
+    return await res.json();
   }catch(e){
     console.error(e);
     return null;
   }
 }
 
+async function createCalendarEvent(order){
+  const data = await calendarFetch('POST', '/calendars/primary/events', eventPayload(order));
+  return data && data.id ? data.id : null;
+}
+async function updateCalendarEvent(eventId, order){
+  await calendarFetch('PATCH', '/calendars/primary/events/' + encodeURIComponent(eventId), eventPayload(order));
+}
+async function deleteCalendarEvent(eventId){
+  return await calendarFetch('DELETE', '/calendars/primary/events/' + encodeURIComponent(eventId));
+}
 
+// --- Almacenamiento local ---
 function loadOrders(){
   try{
     const raw = localStorage.getItem(STORAGE_KEY);
     orders = raw ? JSON.parse(raw) : [];
+    if(!Array.isArray(orders)) orders = [];
   }catch(e){ orders = []; }
 }
 function saveOrders(){
   localStorage.setItem(STORAGE_KEY, JSON.stringify(orders));
 }
 
+// --- Utilidades de fecha / precio / teléfono ---
 function daysUntil(dateStr){
   const today = new Date();
-  today.setHours(0,0,0,0);
-  const target = new Date(dateStr + 'T00:00:00');
-  return Math.round((target - today) / 86400000);
+  const todayUTC = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const targetUTC = Date.UTC(y, m - 1, d);
+  return Math.round((targetUTC - todayUTC) / 86400000);
+}
+
+function isUrgent(o){
+  return !o.done && daysUntil(o.date) <= 2;
 }
 
 function fmtDate(dateStr){
@@ -579,19 +761,59 @@ function fmtDate(dateStr){
   return d.toLocaleDateString('es-PR', { weekday:'short', day:'numeric', month:'short' });
 }
 
+function fmtTime(t){
+  if(!t) return '';
+  const [h, m] = t.split(':').map(Number);
+  const d = new Date();
+  d.setHours(h, m, 0, 0);
+  return d.toLocaleTimeString('es-PR', { hour:'numeric', minute:'2-digit' });
+}
+
+function fmtPrice(v){
+  const n = Number(v);
+  if(v === '' || v === null || v === undefined || !isFinite(n)) return '';
+  return '$' + n.toFixed(2);
+}
+
+function formatPhone(value){
+  const digits = value.replace(/\D/g, '').slice(0, 10);
+  const p1 = digits.slice(0, 3);
+  const p2 = digits.slice(3, 6);
+  const p3 = digits.slice(6, 10);
+  if(digits.length > 6) return `${p1}-${p2}-${p3}`;
+  if(digits.length > 3) return `${p1}-${p2}`;
+  return p1;
+}
+
+function escapeHTML(str){
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+// --- Render ---
 function render(){
   const container = document.getElementById('listContainer');
-  const pending = orders.filter(o => !o.done).sort((a,b) => a.date.localeCompare(b.date));
-  const done = orders.filter(o => o.done).sort((a,b) => b.date.localeCompare(a.date));
+  const q = document.getElementById('searchInput').value.trim().toLowerCase();
+  const filter = document.getElementById('filterSelect').value;
 
-  document.getElementById('statTotal').textContent = pending.length;
-  document.getElementById('statUrgent').textContent = pending.filter(o => daysUntil(o.date) <= 2 && daysUntil(o.date) >= 0).length;
-  document.getElementById('statWeek').textContent = pending.filter(o => daysUntil(o.date) <= 7 && daysUntil(o.date) >= 0).length;
+  const matches = (o) => {
+    if(filter === 'pending' && o.done) return false;
+    if(filter === 'done' && !o.done) return false;
+    if(filter === 'urgent' && !isUrgent(o)) return false;
+    if(q){
+      const haystack = (o.name + ' ' + (o.phone || '') + ' ' + (o.info || '')).toLowerCase();
+      if(!haystack.includes(q)) return false;
+    }
+    return true;
+  };
 
-  if(orders.length === 0){
-    container.innerHTML = '<div class="empty"><span class="big">Aún no hay pedidos</span>Toca el botón dorado para anotar el primero.</div>';
-    return;
-  }
+  const pending = orders.filter(o => !o.done && matches(o)).sort((a,b) => a.date.localeCompare(b.date));
+  const done = orders.filter(o => o.done && matches(o)).sort((a,b) => b.date.localeCompare(a.date));
+
+  document.getElementById('statTotal').textContent = orders.filter(o => !o.done).length;
+  document.getElementById('statUrgent').textContent = orders.filter(isUrgent).length;
+  document.getElementById('statWeek').textContent = orders.filter(o => !o.done && daysUntil(o.date) <= 7 && daysUntil(o.date) >= 0).length;
 
   let html = '';
   if(pending.length){
@@ -602,8 +824,17 @@ function render(){
     html += '<div class="section-label">Entregados</div>';
     html += done.map(o => cardHTML(o)).join('');
   }
-  container.innerHTML = html;
 
+  if(!html){
+    if(orders.length === 0){
+      container.innerHTML = '<div class="empty"><span class="big">Aún no hay pedidos</span>Toca el botón dorado para anotar el primero.</div>';
+    } else {
+      container.innerHTML = '<div class="empty"><span class="big">Sin resultados</span>Ningún pedido coincide con tu búsqueda o filtro.</div>';
+    }
+    return;
+  }
+
+  container.innerHTML = html;
   container.querySelectorAll('[data-edit]').forEach(el => el.addEventListener('click', () => openEdit(el.dataset.edit)));
   container.querySelectorAll('[data-done]').forEach(el => el.addEventListener('click', () => toggleDone(el.dataset.done)));
   container.querySelectorAll('[data-del]').forEach(el => el.addEventListener('click', () => deleteOrder(el.dataset.del)));
@@ -611,12 +842,15 @@ function render(){
 
 function cardHTML(o){
   const dleft = daysUntil(o.date);
-  const urgent = !o.done && dleft <= 2 && dleft >= 0;
-  let dLabel, dNum;
+  const urgent = isUrgent(o);
+  let dNum, dLabel;
   if(o.done){ dNum = '✓'; dLabel = 'Listo'; }
-  else if(dleft < 0){ dNum = Math.abs(dleft); dLabel = dleft === -1 ? 'día atrasado' : 'días atraso'; }
+  else if(dleft < 0){ dNum = Math.abs(dleft); dLabel = dleft === -1 ? 'día atraso' : 'días atraso'; }
   else if(dleft === 0){ dNum = 'Hoy'; dLabel = 'entrega'; }
   else { dNum = dleft; dLabel = dleft === 1 ? 'día' : 'días'; }
+
+  const price = fmtPrice(o.price);
+  const dateLine = `📅 ${fmtDate(o.date)}${o.time ? ' · ' + fmtTime(o.time) : ''}`;
 
   return `
   <div class="order-card ${urgent ? 'urgent':''}">
@@ -629,8 +863,8 @@ function cardHTML(o){
     </div>
     ${o.info ? `<div class="order-info">${escapeHTML(o.info)}</div>` : ''}
     <div class="order-meta">
-      <div class="order-date">📅 ${fmtDate(o.date)}</div>
-      ${o.price ? `<div class="order-price">$${Number(o.price).toFixed(2)}</div>` : '<div></div>'}
+      <div class="order-date">${dateLine}</div>
+      ${price ? `<div class="order-price">${price}</div>` : '<div></div>'}
     </div>
     <div class="order-actions">
       <button data-edit="${o.id}">Editar</button>
@@ -640,15 +874,11 @@ function cardHTML(o){
   </div>`;
 }
 
-function escapeHTML(str){
-  const div = document.createElement('div');
-  div.textContent = str;
-  return div.innerHTML;
-}
-
+// --- Hoja de nuevo/editar pedido ---
 function openSheet(){
   document.getElementById('backdrop').classList.add('open');
   document.getElementById('sheet').classList.add('open');
+  setTimeout(() => document.getElementById('fName').focus(), 250);
 }
 function closeSheet(){
   document.getElementById('backdrop').classList.remove('open');
@@ -661,6 +891,7 @@ function clearForm(){
   document.getElementById('fPhone').value = '';
   document.getElementById('fInfo').value = '';
   document.getElementById('fDate').value = '';
+  document.getElementById('fTime').value = '';
   document.getElementById('fPrice').value = '';
   document.getElementById('sheetTitle').textContent = 'Nuevo pedido';
 }
@@ -673,30 +904,56 @@ function openEdit(id){
   document.getElementById('fPhone').value = o.phone || '';
   document.getElementById('fInfo').value = o.info || '';
   document.getElementById('fDate').value = o.date;
+  document.getElementById('fTime').value = o.time || '';
   document.getElementById('fPrice').value = o.price || '';
   document.getElementById('sheetTitle').textContent = 'Editar pedido';
   openSheet();
 }
 
-function toggleDone(id){
+function toggleDone(id, silent){
   const o = orders.find(x => x.id === id);
-  if(o){ o.done = !o.done; saveOrders(); render(); }
-}
-function deleteOrder(id){
-  if(!confirm('¿Eliminar este pedido?')) return;
-  orders = orders.filter(x => x.id !== id);
-  saveOrders(); render();
+  if(!o) return;
+  o.done = !o.done;
+  saveOrders();
+  render();
+  checkNotifications();
+
+  if(o.done){
+    if(!silent){
+      toast('Pedido marcado como entregado ✓', { action: 'Deshacer', onAction: () => toggleDone(id, true) });
+    }
+    const oldId = o.gcalEventId;
+    if(oldId){
+      deleteCalendarEvent(oldId).then((ok) => {
+        if(ok && o.gcalEventId === oldId){
+          o.gcalEventId = null;
+          saveOrders();
+        }
+      });
+    }
+  } else {
+    if(!silent) toast('Pedido reabierto');
+    if(gAccessToken){
+      createCalendarEvent(o).then(newId => {
+        if(newId){ o.gcalEventId = newId; saveOrders(); }
+      });
+    }
+  }
 }
 
-function formatPhone(value){
-  const digits = value.replace(/\D/g, '').slice(0, 10);
-  const p1 = digits.slice(0, 3);
-  const p2 = digits.slice(3, 6);
-  const p3 = digits.slice(6, 10);
-  if(digits.length > 6) return `${p1}-${p2}-${p3}`;
-  if(digits.length > 3) return `${p1}-${p2}`;
-  return p1;
+function deleteOrder(id){
+  const o = orders.find(x => x.id === id);
+  if(!o) return;
+  askConfirm('¿Eliminar el pedido de ' + o.name + '?', () => {
+    orders = orders.filter(x => x.id !== id);
+    saveOrders();
+    render();
+    checkNotifications();
+    toast('Pedido eliminado');
+    if(o.gcalEventId) deleteCalendarEvent(o.gcalEventId);
+  }, 'Eliminar');
 }
+
 document.getElementById('fPhone').addEventListener('input', (e) => {
   e.target.value = formatPhone(e.target.value);
 });
@@ -705,11 +962,11 @@ document.getElementById('openAdd').addEventListener('click', () => { clearForm()
 document.getElementById('cancelBtn').addEventListener('click', closeSheet);
 document.getElementById('backdrop').addEventListener('click', closeSheet);
 
-document.getElementById('saveBtn').addEventListener('click', async () => {
+document.getElementById('saveBtn').addEventListener('click', () => {
   const name = document.getElementById('fName').value.trim();
   const date = document.getElementById('fDate').value;
   if(!name || !date){
-    alert('Por favor pon al menos el nombre y la fecha de entrega.');
+    toast('Pon al menos el nombre y la fecha de entrega.');
     return;
   }
   const data = {
@@ -717,29 +974,122 @@ document.getElementById('saveBtn').addEventListener('click', async () => {
     phone: formatPhone(document.getElementById('fPhone').value.trim()),
     info: document.getElementById('fInfo').value.trim(),
     date,
-    price: document.getElementById('fPrice').value,
+    time: document.getElementById('fTime').value,
+    price: document.getElementById('fPrice').value.trim(),
   };
-  let newOrder = null;
+
+  let newOrder;
   if(editingId){
-    const o = orders.find(x => x.id === editingId);
-    Object.assign(o, data);
-    newOrder = o;
+    newOrder = orders.find(x => x.id === editingId);
+    Object.assign(newOrder, data);
   } else {
     newOrder = { id: Date.now().toString(), done:false, ...data };
     orders.push(newOrder);
   }
+
   saveOrders();
   closeSheet();
   render();
-  checkNotifications(true);
+  checkNotifications();
+  toast('Pedido guardado ✓');
+
   if(gAccessToken){
-    const evId = await addOrderToCalendar(newOrder);
-    if(evId){ newOrder.gcalEventId = evId; saveOrders(); }
+    if(newOrder.gcalEventId){
+      updateCalendarEvent(newOrder.gcalEventId, newOrder);
+    } else {
+      createCalendarEvent(newOrder).then(newId => {
+        if(newId){ newOrder.gcalEventId = newId; saveOrders(); }
+      });
+    }
   }
 });
 
+// --- Respaldos: exportar / importar ---
+function dateStamp(){
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+}
+
+function downloadFile(name, content, type){
+  const blob = new Blob([content], { type });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function exportJSON(){
+  if(orders.length === 0){ toast('No hay pedidos que respaldar todavía.'); return; }
+  const payload = { app: 'ricans-sweets', version: 1, exportedAt: new Date().toISOString(), orders };
+  downloadFile('ricans-sweets-respaldo-' + dateStamp() + '.json', JSON.stringify(payload, null, 2), 'application/json');
+  toast('Respaldo descargado ✓');
+}
+
+function csvCell(v){
+  v = String(v == null ? '' : v);
+  return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
+}
+
+function exportCSV(){
+  if(orders.length === 0){ toast('No hay pedidos para exportar todavía.'); return; }
+  const header = ['Nombre','Teléfono','Detalles','Fecha','Hora','Precio','Estado'];
+  const rows = orders.map(o => [
+    o.name,
+    o.phone || '',
+    (o.info || '').replace(/\n/g, ' '),
+    o.date,
+    o.time || '',
+    o.price || '',
+    o.done ? 'Entregado' : 'Pendiente'
+  ]);
+  const csv = [header, ...rows].map(r => r.map(csvCell).join(',')).join('\r\n');
+  downloadFile('ricans-sweets-pedidos-' + dateStamp() + '.csv', '\uFEFF' + csv, 'text/csv;charset=utf-8');
+  toast('CSV descargado ✓');
+}
+
+function importJSON(file){
+  const reader = new FileReader();
+  reader.onload = () => {
+    try{
+      const data = JSON.parse(reader.result);
+      const list = Array.isArray(data) ? data : (data && Array.isArray(data.orders) ? data.orders : null);
+      if(!list) throw new Error('formato inválido');
+      let added = 0, updated = 0;
+      list.forEach(item => {
+        if(!item || typeof item !== 'object' || !item.name || !item.date) return;
+        const id = item.id != null ? String(item.id) : (Date.now().toString() + Math.random().toString(36).slice(2));
+        const clean = {
+          id,
+          name: String(item.name),
+          date: String(item.date),
+          done: !!item.done,
+          phone: item.phone || '',
+          info: item.info || '',
+          time: item.time || '',
+          price: item.price != null ? String(item.price) : '',
+          gcalEventId: item.gcalEventId || null
+        };
+        const existing = orders.find(x => x.id === id);
+        if(existing){ Object.assign(existing, clean); updated++; }
+        else { orders.push(clean); added++; }
+      });
+      saveOrders();
+      render();
+      checkNotifications();
+      toast(`Importado: ${added} nuevos, ${updated} actualizados.`);
+    }catch(e){
+      toast('El archivo no es un respaldo válido.');
+    }
+  };
+  reader.readAsText(file);
+}
+
 // --- Notificaciones ---
-function checkNotifications(justSaved){
+function checkNotifications(){
   const notice = document.getElementById('notifNotice');
   if(!('Notification' in window)){
     notice.textContent = 'Este navegador no soporta notificaciones. Revisa la app para ver pedidos próximos.';
@@ -748,7 +1098,7 @@ function checkNotifications(justSaved){
   if(Notification.permission === 'default'){
     notice.innerHTML = 'Activa las notificaciones para avisos 2 días antes de cada entrega. <button class="link" id="enableNotif">Activar</button>';
     document.getElementById('enableNotif').addEventListener('click', () => {
-      Notification.requestPermission().then(perm => { checkNotifications(); if(perm==='granted') fireDueNotifications(); });
+      Notification.requestPermission().then(perm => { checkNotifications(); if(perm === 'granted') fireDueNotifications(); });
     });
     return;
   }
@@ -762,20 +1112,108 @@ function checkNotifications(justSaved){
 
 function fireDueNotifications(){
   if(Notification.permission !== 'granted') return;
-  const today = new Date().toISOString().slice(0,10);
-  let firedKey = 'ricans_sweets_notified_' + today;
+  const now = new Date();
+  const today = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-' + String(now.getDate()).padStart(2,'0');
+  const firedKey = 'ricans_sweets_notified_' + today;
   if(sessionStorage.getItem(firedKey)) return;
-  const urgentOrders = orders.filter(o => !o.done && daysUntil(o.date) <= 2 && daysUntil(o.date) >= 0);
+  const urgentOrders = orders.filter(isUrgent);
   urgentOrders.forEach(o => {
     const dleft = daysUntil(o.date);
-    const when = dleft === 0 ? 'HOY' : (dleft === 1 ? 'mañana' : `en ${dleft} días`);
-    new Notification('Ricans Sweets — Pedido próximo', {
-      body: `${o.name}: entrega ${when} (${fmtDate(o.date)})`,
-    });
+    let when;
+    if(dleft < 0) when = dleft === -1 ? 'atrasado 1 día' : `atrasado ${Math.abs(dleft)} días`;
+    else if(dleft === 0) when = 'HOY';
+    else if(dleft === 1) when = 'mañana';
+    else when = `en ${dleft} días`;
+    try{
+      new Notification('Ricans Sweets — Pedido próximo', {
+        body: `${o.name}: entrega ${when} (${fmtDate(o.date)})`,
+      });
+    }catch(e){}
   });
   sessionStorage.setItem(firedKey, '1');
 }
 
+// --- Toast y confirmación ---
+let toastTimer = null;
+function toast(msg, opts){
+  const el = document.getElementById('toast');
+  el.innerHTML = '';
+  const span = document.createElement('span');
+  span.textContent = msg;
+  el.appendChild(span);
+  if(opts && opts.action){
+    const btn = document.createElement('button');
+    btn.textContent = opts.action;
+    btn.className = 'toast-action';
+    btn.addEventListener('click', () => {
+      clearTimeout(toastTimer);
+      hideToast();
+      if(opts.onAction) opts.onAction();
+    });
+    el.appendChild(btn);
+  }
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(hideToast, 4000);
+}
+function hideToast(){
+  document.getElementById('toast').classList.remove('show');
+}
+
+let confirmCallback = null;
+function askConfirm(msg, onConfirm, okLabel){
+  document.getElementById('confirmMsg').textContent = msg;
+  document.getElementById('confirmOk').textContent = okLabel || 'Confirmar';
+  confirmCallback = onConfirm;
+  document.getElementById('confirmBackdrop').classList.add('open');
+  document.getElementById('confirmModal').classList.add('open');
+  setTimeout(() => document.getElementById('confirmOk').focus(), 100);
+}
+function closeConfirm(){
+  document.getElementById('confirmBackdrop').classList.remove('open');
+  document.getElementById('confirmModal').classList.remove('open');
+  confirmCallback = null;
+}
+document.getElementById('confirmCancel').addEventListener('click', closeConfirm);
+document.getElementById('confirmBackdrop').addEventListener('click', closeConfirm);
+document.getElementById('confirmOk').addEventListener('click', () => {
+  const cb = confirmCallback;
+  closeConfirm();
+  if(cb) cb();
+});
+
+// Cerrar paneles con Escape
+document.addEventListener('keydown', (e) => {
+  if(e.key === 'Escape'){
+    closeSheet();
+    closeGcalSheet();
+    closeConfirm();
+  }
+});
+
+// --- Buscador, filtro y herramientas ---
+document.getElementById('searchInput').addEventListener('input', render);
+document.getElementById('filterSelect').addEventListener('change', render);
+document.getElementById('exportBtn').addEventListener('click', exportJSON);
+document.getElementById('exportCsvBtn').addEventListener('click', exportCSV);
+document.getElementById('importBtn').addEventListener('click', () => document.getElementById('importFile').click());
+document.getElementById('importFile').addEventListener('change', (e) => {
+  if(e.target.files && e.target.files[0]) importJSON(e.target.files[0]);
+  e.target.value = '';
+});
+
+// --- Service Worker (offline / PWA) ---
+if('serviceWorker' in navigator){
+  const isHttpsOrLocal = location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+  if(isHttpsOrLocal){
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('sw.js').catch(e => console.warn('SW no registrado:', e));
+    });
+  }
+}
+
+// --- Inicialización ---
+gAccessToken = loadGcalToken();
 loadOrders();
 render();
 checkNotifications();

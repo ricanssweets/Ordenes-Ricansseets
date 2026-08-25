@@ -1,12 +1,19 @@
 {
+  "id": "./",
   "name": "Rican's Sweets by Fany — Pedidos",
   "short_name": "Rican's Sweets",
+  "description": "Libro de pedidos de Rican's Sweets by Fany: organiza entregas, precios y sincroniza con Google Calendar.",
+  "lang": "es",
   "start_url": "./",
+  "scope": "./",
   "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
   "background_color": "#0B0B0C",
   "theme_color": "#0B0B0C",
+  "categories": ["business", "productivity"],
   "icons": [
-    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
-    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" }
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" },
+    { "src": "icon-180.png", "sizes": "180x180", "type": "image/png", "purpose": "apple-touch-icon" }
   ]
 }
