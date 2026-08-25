@@ -440,6 +440,28 @@
   .confirm-modal.open{ opacity:1; transform: translate(-50%,-50%) scale(1); pointer-events:auto; }
   .confirm-modal h2{ font-family:'Fraunces',serif; color: var(--gold-light); font-size:18px; margin:0 0 8px; text-align:center; }
   .confirm-modal p{ color: var(--cream); font-size:14px; text-align:center; margin:0 0 16px; line-height:1.5; }
+
+  /* Impresión: lista limpia, sin controles ni fondo oscuro */
+  @media print{
+    body{ background:#fff !important; color:#000; padding:0; }
+    .fab, .toolbar, .data-actions, .gcal-bar, .notice, .summary,
+    .sheet, .sheet-backdrop, .confirm-modal, .toast, .order-actions,
+    header .logo, header .eyebrow, header .divider{ display:none !important; }
+    header{ padding:8px 0; }
+    header h1{ font-size:22px; background:none; color:#000 !important; -webkit-text-fill-color:#000 !important; }
+    main{ max-width:none; padding:0; }
+    .section-label{ color:#000; margin:14px 0 6px; }
+    .order-card{
+      background:#fff; border:1px solid #999; border-radius:8px; padding:10px 12px;
+      margin-bottom:8px; page-break-inside:avoid; color:#000;
+    }
+    .order-card.urgent{ background:#fff; border-color:#c00; }
+    .order-card::before{ display:none; }
+    .order-name, .order-phone, .order-info, .order-date, .order-price, .empty{ color:#000; }
+    .order-meta{ border-top-color:#ccc; }
+    .stamp{ border-color:#999; color:#000; }
+    .order-card.urgent .stamp{ border-color:#c00; color:#c00; }
+  }
 </style>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <link rel="manifest" href="manifest.json">
@@ -497,6 +519,7 @@
     <button id="exportBtn" title="Descargar copia de seguridad completa">Respaldo</button>
     <button id="exportCsvBtn" title="Descargar listado en formato Excel/CSV">CSV</button>
     <button id="importBtn" title="Restaurar pedidos desde un respaldo JSON">Importar</button>
+    <button id="printBtn" title="Imprimir listado">Imprimir</button>
     <input type="file" id="importFile" accept=".json,application/json" hidden>
   </div>
 
@@ -579,25 +602,27 @@ let gAccessToken = null;
 
 function getClientId(){ return localStorage.getItem(GCAL_CLIENTID_KEY) || ''; }
 
+// El token de acceso se guarda en sessionStorage (no en localStorage):
+// se mantiene al recargar la pestaña, pero se borra al cerrar el navegador.
 function loadGcalToken(){
   try{
-    const raw = localStorage.getItem(GCAL_TOKEN_KEY);
+    const raw = sessionStorage.getItem(GCAL_TOKEN_KEY);
     if(!raw) return null;
     const t = JSON.parse(raw);
     if(t.token && t.expiresAt && Date.now() < t.expiresAt) return t.token;
   }catch(e){}
-  localStorage.removeItem(GCAL_TOKEN_KEY);
+  sessionStorage.removeItem(GCAL_TOKEN_KEY);
   return null;
 }
 function saveGcalToken(token, expiresIn){
   try{
-    localStorage.setItem(GCAL_TOKEN_KEY, JSON.stringify({
+    sessionStorage.setItem(GCAL_TOKEN_KEY, JSON.stringify({
       token,
       expiresAt: Date.now() + (expiresIn || 3600) * 1000
     }));
   }catch(e){}
 }
-function clearGcalToken(){ localStorage.removeItem(GCAL_TOKEN_KEY); }
+function clearGcalToken(){ sessionStorage.removeItem(GCAL_TOKEN_KEY); }
 
 function updateGcalBar(){
   const bar = document.getElementById('gcalBar');
@@ -619,6 +644,7 @@ function updateGcalBar(){
 }
 
 function openGcalSheet(){
+  rememberFocus();
   document.getElementById('fClientId').value = getClientId();
   document.getElementById('gcalBackdrop').classList.add('open');
   document.getElementById('gcalSheet').classList.add('open');
@@ -627,6 +653,7 @@ function openGcalSheet(){
 function closeGcalSheet(){
   document.getElementById('gcalBackdrop').classList.remove('open');
   document.getElementById('gcalSheet').classList.remove('open');
+  restoreFocus();
 }
 
 document.getElementById('gcalBtn').addEventListener('click', () => {
@@ -684,6 +711,7 @@ function eventPayload(order){
       useDefault: false,
       overrides: [
         { method: 'popup', minutes: 2880 },
+        { method: 'email', minutes: 2880 },
         { method: 'popup', minutes: 60 }
       ]
     }
@@ -881,6 +909,7 @@ function cardHTML(o){
 
 // --- Hoja de nuevo/editar pedido ---
 function openSheet(){
+  rememberFocus();
   document.getElementById('backdrop').classList.add('open');
   document.getElementById('sheet').classList.add('open');
   setTimeout(() => document.getElementById('fName').focus(), 250);
@@ -890,6 +919,7 @@ function closeSheet(){
   document.getElementById('sheet').classList.remove('open');
   editingId = null;
   clearForm();
+  restoreFocus();
 }
 function clearForm(){
   document.getElementById('fName').value = '';
@@ -1179,6 +1209,7 @@ function hideToast(){
 
 let confirmCallback = null;
 function askConfirm(msg, onConfirm, okLabel){
+  rememberFocus();
   document.getElementById('confirmMsg').textContent = msg;
   document.getElementById('confirmOk').textContent = okLabel || 'Confirmar';
   confirmCallback = onConfirm;
@@ -1190,6 +1221,7 @@ function closeConfirm(){
   document.getElementById('confirmBackdrop').classList.remove('open');
   document.getElementById('confirmModal').classList.remove('open');
   confirmCallback = null;
+  restoreFocus();
 }
 document.getElementById('confirmCancel').addEventListener('click', closeConfirm);
 document.getElementById('confirmBackdrop').addEventListener('click', closeConfirm);
@@ -1199,13 +1231,42 @@ document.getElementById('confirmOk').addEventListener('click', () => {
   if(cb) cb();
 });
 
-// Cerrar paneles con Escape
+// --- Foco en modales: recordar/restaurar y trampa de Tab ---
+let lastFocusedEl = null;
+function rememberFocus(){ lastFocusedEl = document.activeElement; }
+function restoreFocus(){
+  if(lastFocusedEl){
+    try{ lastFocusedEl.focus(); }catch(e){}
+  }
+  lastFocusedEl = null;
+}
+function trapFocus(e){
+  if(e.key !== 'Tab') return;
+  const openModal = document.querySelector('.sheet.open, .confirm-modal.open');
+  if(!openModal) return;
+  const focusables = Array.from(openModal.querySelectorAll('button, [href], input, select, textarea, [tabindex]'))
+    .filter(el => !el.disabled && el.getAttribute('tabindex') !== '-1');
+  if(focusables.length === 0) return;
+  const first = focusables[0];
+  const last = focusables[focusables.length - 1];
+  if(e.shiftKey && document.activeElement === first){
+    e.preventDefault();
+    last.focus();
+  } else if(!e.shiftKey && document.activeElement === last){
+    e.preventDefault();
+    first.focus();
+  }
+}
+
+// Cerrar paneles con Escape y mantener el foco dentro del modal abierto
 document.addEventListener('keydown', (e) => {
   if(e.key === 'Escape'){
     closeSheet();
     closeGcalSheet();
     closeConfirm();
+    return;
   }
+  trapFocus(e);
 });
 
 // --- Buscador, filtro y herramientas ---
@@ -1218,6 +1279,7 @@ document.getElementById('importFile').addEventListener('change', (e) => {
   if(e.target.files && e.target.files[0]) importJSON(e.target.files[0]);
   e.target.value = '';
 });
+document.getElementById('printBtn').addEventListener('click', () => window.print());
 
 // --- Service Worker (offline / PWA) ---
 if('serviceWorker' in navigator){
