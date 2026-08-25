@@ -747,8 +747,13 @@ function saveOrders(){
 function daysUntil(dateStr){
   const today = new Date();
   const todayUTC = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
-  const [y, m, d] = dateStr.split('-').map(Number);
+  if(!dateStr) return 0;
+  const parts = String(dateStr).split('-');
+  if(parts.length !== 3) return 0;
+  const y = Number(parts[0]), m = Number(parts[1]), d = Number(parts[2]);
+  if(!y || !m || !d) return 0;
   const targetUTC = Date.UTC(y, m - 1, d);
+  if(isNaN(targetUTC)) return 0;
   return Math.round((targetUTC - todayUTC) / 86400000);
 }
 
@@ -802,7 +807,7 @@ function render(){
     if(filter === 'done' && !o.done) return false;
     if(filter === 'urgent' && !isUrgent(o)) return false;
     if(q){
-      const haystack = (o.name + ' ' + (o.phone || '') + ' ' + (o.info || '')).toLowerCase();
+      const haystack = (o.name + ' ' + (o.phone || '') + ' ' + (o.info || '') + ' ' + o.date + ' ' + fmtDate(o.date)).toLowerCase();
       if(!haystack.includes(q)) return false;
     }
     return true;
@@ -962,13 +967,9 @@ document.getElementById('openAdd').addEventListener('click', () => { clearForm()
 document.getElementById('cancelBtn').addEventListener('click', closeSheet);
 document.getElementById('backdrop').addEventListener('click', closeSheet);
 
-document.getElementById('saveBtn').addEventListener('click', () => {
+function doSave(){
   const name = document.getElementById('fName').value.trim();
   const date = document.getElementById('fDate').value;
-  if(!name || !date){
-    toast('Pon al menos el nombre y la fecha de entrega.');
-    return;
-  }
   const data = {
     name,
     phone: formatPhone(document.getElementById('fPhone').value.trim()),
@@ -1001,6 +1002,21 @@ document.getElementById('saveBtn').addEventListener('click', () => {
         if(newId){ newOrder.gcalEventId = newId; saveOrders(); }
       });
     }
+  }
+}
+
+document.getElementById('saveBtn').addEventListener('click', () => {
+  const name = document.getElementById('fName').value.trim();
+  const date = document.getElementById('fDate').value;
+  if(!name || !date){
+    toast('Pon al menos el nombre y la fecha de entrega.');
+    return;
+  }
+  const dup = orders.find(o => !o.done && o.id !== editingId && o.name.trim().toLowerCase() === name.toLowerCase() && o.date === date);
+  if(dup){
+    askConfirm(`Ya existe un pedido de "${dup.name}" para ${fmtDate(date)}. ¿Guardar de todos modos?`, doSave, 'Guardar igual');
+  } else {
+    doSave();
   }
 });
 
@@ -1061,6 +1077,7 @@ function importJSON(file){
       let added = 0, updated = 0;
       list.forEach(item => {
         if(!item || typeof item !== 'object' || !item.name || !item.date) return;
+        if(!/^\d{4}-\d{2}-\d{2}$/.test(String(item.date))) return;
         const id = item.id != null ? String(item.id) : (Date.now().toString() + Math.random().toString(36).slice(2));
         const clean = {
           id,
@@ -1211,6 +1228,15 @@ if('serviceWorker' in navigator){
     });
   }
 }
+
+// Sincronizar entre pestañas: si otra pestaña cambia los pedidos, actualiza esta.
+window.addEventListener('storage', (e) => {
+  if(e.key === STORAGE_KEY){
+    loadOrders();
+    render();
+    checkNotifications();
+  }
+});
 
 // --- Inicialización ---
 gAccessToken = loadGcalToken();

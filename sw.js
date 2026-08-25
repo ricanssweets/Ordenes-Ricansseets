@@ -1,9 +1,9 @@
 /* Service Worker — Rican's Sweets by Fany
-   Cache-first para la app (funciona offline) y network-first para Google. */
-const CACHE = 'ricans-sweets-v1';
+   - index.html se sirve con network-first (las actualizaciones llegan de inmediato).
+   - Iconos/logo se sirven con cache-first (rápidos y disponibles offline). */
+const CACHE = 'ricans-sweets-v2';
 const ASSETS = [
   './',
-  './index.html',
   './manifest.json',
   './logo.png',
   './icon-192.png',
@@ -14,7 +14,7 @@ const ASSETS = [
 self.addEventListener('install', (e) => {
   e.waitUntil(
     caches.open(CACHE)
-      .then((c) => c.addAll(ASSETS))
+      .then((c) => Promise.allSettled(ASSETS.map((u) => c.add(u))))
       .then(() => self.skipWaiting())
   );
 });
@@ -33,7 +33,7 @@ self.addEventListener('fetch', (e) => {
 
   const url = new URL(req.url);
 
-  // Recursos externos (fuentes y scripts de Google): network-first con respaldo en caché.
+  // Google (fuentes y scripts): network-first con respaldo en caché.
   const isGoogle = url.hostname.includes('googleapis.com') ||
                    url.hostname.includes('gstatic.com') ||
                    url.hostname.includes('accounts.google.com');
@@ -48,13 +48,29 @@ self.addEventListener('fetch', (e) => {
     return;
   }
 
-  // App (mismo origen): cache-first, actualiza en segundo plano si hay red.
+  // Páginas HTML / navegación: network-first para que las actualizaciones lleguen,
+  // con respaldo en caché si no hay conexión.
+  const isHtml = req.mode === 'navigate' || url.pathname.endsWith('.html') || url.pathname.endsWith('/');
+  if (isHtml) {
+    e.respondWith(
+      fetch(req).then((res) => {
+        const copy = res.clone();
+        caches.open(CACHE).then((c) => c.put(req, copy));
+        return res;
+      }).catch(() => caches.match(req))
+    );
+    return;
+  }
+
+  // Resto (iconos, logo, manifest): cache-first con caché en runtime.
   e.respondWith(
     caches.match(req).then((cached) => {
       if (cached) return cached;
       return fetch(req).then((res) => {
-        const copy = res.clone();
-        caches.open(CACHE).then((c) => c.put(req, copy));
+        if (res && res.status === 200) {
+          const copy = res.clone();
+          caches.open(CACHE).then((c) => c.put(req, copy));
+        }
         return res;
       });
     })
