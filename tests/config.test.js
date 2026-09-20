@@ -26,8 +26,14 @@ async function run(check) {
   check('oculta también la carpeta de pruebas',
     glob('/tests/*', '/tests/run.js') && !!toml.match(/from\s*=\s*"\/tests\/\*"/));
 
-  ['X-Content-Type-Options', 'X-Frame-Options', 'Content-Security-Policy', 'Referrer-Policy']
+  ['X-Content-Type-Options', 'Referrer-Policy']
     .forEach((h) => check('define la cabecera ' + h, toml.indexOf(h) !== -1));
+  // Estas dos se quitaron a proposito: eran la unica diferencia con el sitio de
+  // GitHub Pages, que si se instala como app en Android.
+  // Se buscan las asignaciones reales, no las menciones en los comentarios.
+  check('NO se ponen X-Frame-Options ni Content-Security-Policy (rompian la instalacion)',
+    !/X-Frame-Options\s*=/.test(toml) && !/Content-Security-Policy\s*=/.test(toml),
+    'siguen puestas');
   check('sigue publicando la raíz', /publish\s*=\s*"\."/.test(toml));
   check('sigue apuntando a netlify/functions', /directory\s*=\s*"netlify\/functions"/.test(toml));
 

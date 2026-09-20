@@ -11,21 +11,19 @@
   directory = "netlify/functions"
 
 # --- Cabeceras de seguridad --------------------------------------------------
-# A propósito NO se pone una Content-Security-Policy completa ni
-# Cross-Origin-Opener-Policy:
-#   - Una CSP estricta rompería la app, que usa <style> y <script> en línea y
-#     carga fuentes y el cliente de Google. Ajustarla mal no se puede detectar
-#     sin desplegar, así que aquí solo se fija frame-ancestors.
-#   - COOP rompería la ventana emergente del flujo de Google, que necesita
-#     conservar el opener.
-# Referrer-Policy evita que la URL con la clave (la del flujo de conexión de
-# Google) se filtre a otros sitios a través del encabezado Referer.
+# NO se ponen X-Frame-Options ni "frame-ancestors": eran la unica diferencia
+# entre este sitio y el de GitHub Pages, que si se instala como app en Android.
+# Protegen contra clickjacking, que en una app personal sin enlaces externos no
+# es un riesgo real, y no compensa arriesgarse a que impidan la instalacion.
+# Tampoco se pone una CSP completa: la app usa <style> y <script> en linea y
+# carga fuentes y el cliente de Google, asi que una CSP estricta mal ajustada
+# romperia los estilos o el login.
+# Referrer-Policy si se mantiene: evita que la URL con la clave del flujo de
+# conexion de Google se filtre a otros sitios por el encabezado Referer.
 [[headers]]
   for = "/*"
   [headers.values]
     X-Content-Type-Options = "nosniff"
-    X-Frame-Options = "DENY"
-    Content-Security-Policy = "frame-ancestors 'none'"
     Referrer-Policy = "strict-origin-when-cross-origin"
 
 # --- No publicar archivos que solo sirven para construir ---------------------
