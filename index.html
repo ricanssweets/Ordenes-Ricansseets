@@ -490,6 +490,8 @@
     <button class="link" id="gcalBtn">Conectar</button>
   </div>
 
+  <div class="notice" id="secNotice" style="display:none;"></div>
+
   <div class="summary">
     <div class="pill">
       <span class="num" id="statTotal">0</span>
@@ -520,6 +522,7 @@
     <button id="exportCsvBtn" title="Descargar listado en formato Excel/CSV">CSV</button>
     <button id="importBtn" title="Restaurar pedidos desde un respaldo JSON">Importar</button>
     <button id="printBtn" title="Imprimir listado">Imprimir</button>
+    <button id="keyBtn" title="Clave del backend (sincronización en la nube)">Clave</button>
     <input type="file" id="importFile" accept=".json,application/json" hidden>
   </div>
 
@@ -577,6 +580,20 @@
   </div>
 </div>
 
+<div class="sheet-backdrop" id="keyBackdrop"></div>
+<div class="sheet" id="keySheet" role="dialog" aria-modal="true" aria-labelledby="keySheetTitle">
+  <h2 id="keySheetTitle">Clave de la app</h2>
+  <div class="field">
+    <label for="fAppKey">Clave configurada en Netlify</label>
+    <input type="password" id="fAppKey" autocomplete="current-password" placeholder="APP_PASSWORD">
+  </div>
+  <p class="notice" style="text-align:left;">Es el valor de la variable <code>APP_PASSWORD</code> de Netlify. Se guarda solo en este navegador. Mientras no la pongas, la app funciona en modo local: los pedidos se quedan en este dispositivo y no se sincronizan.</p>
+  <div class="sheet-actions">
+    <button class="btn-cancel" id="keyCancelBtn">Cancelar</button>
+    <button class="btn-save" id="keySaveBtn">Guardar</button>
+  </div>
+</div>
+
 <div class="sheet-backdrop" id="confirmBackdrop"></div>
 <div class="confirm-modal" id="confirmModal" role="dialog" aria-modal="true" aria-labelledby="confirmTitle">
   <h2 id="confirmTitle">¿Estás seguro?</h2>
@@ -593,6 +610,7 @@
 const STORAGE_KEY = 'ricans_sweets_orders_v1';
 const GCAL_CLIENTID_KEY = 'ricans_sweets_gcal_clientid';
 const GCAL_TOKEN_KEY = 'ricans_sweets_gcal_token';
+const APP_KEY_STORAGE = 'ricans_sweets_app_key';
 let orders = [];
 let editingId = null;
 
@@ -605,13 +623,35 @@ let USE_BACKEND = false;
 let API_BASE = '/.netlify/functions';
 let PUSH_PUBLIC_KEY = '';
 let BACKEND_GOOGLE_CONNECTED = false;
+let BACKEND_AUTH_REQUIRED = false;
+let BACKEND_AUTHORIZED = true;
+
+// --- Clave de la app (solo si el backend tiene APP_PASSWORD en Netlify) ---
+function getAppKey(){ return localStorage.getItem(APP_KEY_STORAGE) || ''; }
+
+// Todas las llamadas a la API pasan por aquí para llevar la cabecera X-App-Key.
+function apiFetch(path, options){
+  const opts = Object.assign({}, options);
+  opts.headers = Object.assign({}, opts.headers || {});
+  const key = getAppKey();
+  if(key) opts.headers['X-App-Key'] = key;
+  return fetch(API_BASE + path, opts);
+}
 
 async function detectBackend(){
   try{
-    const res = await fetch(API_BASE + '/health', { cache: 'no-store' });
+    const res = await apiFetch('/health', { cache: 'no-store' });
     if(!res.ok) return null;
     const data = await res.json();
     if(data && data.ok){
+      BACKEND_AUTH_REQUIRED = !!data.authRequired;
+      BACKEND_AUTHORIZED = data.authorized !== false;
+      if(BACKEND_AUTH_REQUIRED && !BACKEND_AUTHORIZED){
+        // El backend existe pero exige clave y no tenemos una válida. Seguimos
+        // en modo local: la app funciona y no se pisan pedidos a medias.
+        USE_BACKEND = false;
+        return data;
+      }
       USE_BACKEND = true;
       BACKEND_GOOGLE_CONNECTED = !!data.googleConnected;
       PUSH_PUBLIC_KEY = data.pushPublicKey || '';
@@ -623,7 +663,7 @@ async function detectBackend(){
 
 async function pullOrdersFromBackend(){
   try{
-    const res = await fetch(API_BASE + '/orders', { cache: 'no-store' });
+    const res = await apiFetch('/orders', { cache: 'no-store' });
     if(!res.ok) return;
     const data = await res.json();
     if(Array.isArray(data.orders) && data.orders.length > 0){
@@ -641,7 +681,7 @@ function syncToBackend(){
   if(!USE_BACKEND) return;
   clearTimeout(syncTimer);
   syncTimer = setTimeout(() => {
-    fetch(API_BASE + '/orders', {
+    apiFetch('/orders', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ orders })
@@ -669,7 +709,7 @@ async function subscribePush(){
         applicationServerKey: urlBase64ToUint8Array(PUSH_PUBLIC_KEY)
       });
     }
-    await fetch(API_BASE + '/push', {
+    await apiFetch('/push', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'subscribe', subscription: sub })
@@ -682,7 +722,7 @@ async function testPush(){
   toast('Enviando notificación de prueba…');
   try{ await subscribePush(); }catch(e){}
   try{
-    const r = await fetch(API_BASE + '/push', {
+    const r = await apiFetch('/push', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'test' })
@@ -740,6 +780,18 @@ function updateGcalBar(){
   }
 }
 
+// Aviso visible si el backend está abierto sin clave: sin ella, cualquiera que
+// sepa la URL puede leer los nombres y teléfonos de los clientes.
+function updateSecurityNotice(){
+  const el = document.getElementById('secNotice');
+  if(USE_BACKEND && !BACKEND_AUTH_REQUIRED){
+    el.innerHTML = '⚠️ Este backend no tiene clave. Cualquiera que sepa la URL puede ver los nombres y teléfonos de tus clientes. Configura <code>APP_PASSWORD</code> en Netlify y toca <strong>Clave</strong>.';
+    el.style.display = 'block';
+  } else {
+    el.style.display = 'none';
+  }
+}
+
 function openGcalSheet(){
   rememberFocus();
   document.getElementById('fClientId').value = getClientId();
@@ -768,9 +820,47 @@ document.getElementById('gcalSaveBtn').addEventListener('click', () => {
   connectGoogle();
 });
 
+// --- Hoja de la clave del backend (APP_PASSWORD) ---
+function openKeySheet(){
+  rememberFocus();
+  document.getElementById('fAppKey').value = getAppKey();
+  document.getElementById('keyBackdrop').classList.add('open');
+  document.getElementById('keySheet').classList.add('open');
+  setTimeout(() => document.getElementById('fAppKey').focus(), 250);
+}
+function closeKeySheet(){
+  document.getElementById('keyBackdrop').classList.remove('open');
+  document.getElementById('keySheet').classList.remove('open');
+  restoreFocus();
+}
+async function saveAppKey(){
+  const key = document.getElementById('fAppKey').value.trim();
+  if(!key){ toast('Escribe la clave primero.'); return; }
+  localStorage.setItem(APP_KEY_STORAGE, key);
+  closeKeySheet();
+  const backend = await detectBackend();
+  if(USE_BACKEND){
+    await pullOrdersFromBackend();
+    render();
+    updateGcalBar();
+    updateSecurityNotice();
+    checkNotifications();
+    toast('Conectado a la nube ✓');
+  } else if(backend && backend.authRequired){
+    toast('Esa clave no es correcta.');
+  } else {
+    toast('Este sitio no tiene backend: se guarda local.');
+  }
+}
+document.getElementById('keyCancelBtn').addEventListener('click', closeKeySheet);
+document.getElementById('keyBackdrop').addEventListener('click', closeKeySheet);
+document.getElementById('keySaveBtn').addEventListener('click', saveAppKey);
+document.getElementById('keyBtn').addEventListener('click', openKeySheet);
+
 function connectGoogle(){
   if(USE_BACKEND){
-    window.location.href = API_BASE + '/auth';
+    const key = getAppKey();
+    window.location.href = API_BASE + '/auth' + (key ? '?key=' + encodeURIComponent(key) : '');
     return;
   }
   const clientId = getClientId();
@@ -853,7 +943,7 @@ async function calendarFetch(method, path, body){
 async function createCalendarEvent(order){
   if(USE_BACKEND){
     try{
-      const r = await fetch(API_BASE + '/calendar', {
+      const r = await apiFetch('/calendar', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'create', order })
@@ -868,7 +958,7 @@ async function createCalendarEvent(order){
 async function updateCalendarEvent(eventId, order){
   if(USE_BACKEND){
     try{
-      await fetch(API_BASE + '/calendar', {
+      await apiFetch('/calendar', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'update', order, eventId })
@@ -885,7 +975,7 @@ async function updateCalendarEvent(eventId, order){
 async function deleteCalendarEvent(eventId){
   if(USE_BACKEND){
     try{
-      const r = await fetch(API_BASE + '/calendar', {
+      const r = await apiFetch('/calendar', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'delete', eventId })
@@ -1423,6 +1513,7 @@ document.addEventListener('keydown', (e) => {
   if(e.key === 'Escape'){
     closeSheet();
     closeGcalSheet();
+    closeKeySheet();
     closeConfirm();
     return;
   }
@@ -1462,13 +1553,19 @@ window.addEventListener('storage', (e) => {
 
 // --- Inicialización ---
 async function init(){
-  await detectBackend();
+  const backend = await detectBackend();
   gAccessToken = loadGcalToken();
   loadOrders();
   if(USE_BACKEND) await pullOrdersFromBackend();
   render();
   checkNotifications();
   updateGcalBar();
+  updateSecurityNotice();
+
+  // El backend existe pero pide clave y no tenemos una válida: la pedimos.
+  if(backend && backend.authRequired && !backend.authorized){
+    openKeySheet();
+  }
 
   // Volvemos del flujo OAuth de Google (solo en modo backend).
   const params = new URLSearchParams(window.location.search);

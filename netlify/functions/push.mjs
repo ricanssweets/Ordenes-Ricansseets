@@ -4,9 +4,32 @@ import webpush from 'web-push';
 const STORE = 'ricans-sweets';
 const KEY = 'push-subscriptions';
 
+// --- Puerta de acceso -------------------------------------------------------
+// Si APP_PASSWORD está configurado en Netlify, las funciones que tocan datos
+// exigen la cabecera X-App-Key. Sin esa variable siguen abiertas (como antes),
+// pero /health lo reporta y la app lo avisa, para que no pase inadvertido.
+// Esta misma comprobación está copiada en health.mjs, orders.mjs, calendar.mjs y
+// auth.mjs: si cambias una, cambia las cinco.
+function sameSecret(a, b) {
+  if (typeof a !== 'string' || typeof b !== 'string' || a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+function authorized(req) {
+  const expected = process.env.APP_PASSWORD;
+  if (!expected) return true;
+  return sameSecret(req.headers.get('x-app-key') || '', expected);
+}
+
 // Guarda/quita suscripciones push de los dispositivos, y permite enviar una
 // notificación de prueba al instante (acción "test").
 export default async (req) => {
+  // "test" manda un aviso a todos los dispositivos: sin clave sería spam fácil.
+  if (!authorized(req)) {
+    return Response.json({ ok: false, error: 'unauthorized' }, { status: 401 });
+  }
+
   if (req.method !== 'POST') {
     return new Response('Method not allowed', { status: 405 });
   }

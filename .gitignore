@@ -1,0 +1,7 @@
+# Dependencias instaladas por el build de Netlify (npm install)
+node_modules/
+
+# Sistema
+.DS_Store
+Thumbs.db
+desktop.ini

@@ -69,8 +69,21 @@ Todo lo que aparece aquí es **gratis** en sus planes gratuitos.
 | `VAPID_PUBLIC_KEY` | (la generas en el Paso 4) | Functions |
 | `VAPID_PRIVATE_KEY` | (la generas en el Paso 4) | Functions |
 | `VAPID_SUBJECT` | `mailto:TU_CORREO@gmail.com` | Functions |
+| `APP_PASSWORD` | una clave larga que inventes tú (ver abajo) | Functions |
 
 3. **Importante:** después de guardar, Netlify te pedirá **"Trigger deploy"** (redeploy). Hazlo para que las variables se apliquen.
+
+### Protege el backend con una clave (`APP_PASSWORD`)
+
+**Sin esta variable, cualquiera que descubra la URL de tu sitio puede leer los nombres y teléfonos de tus clientes.** Las funciones de Netlify son públicas por diseño: no hay login.
+
+Cómo se comporta:
+
+- **Si `APP_PASSWORD` no está puesta:** el backend queda abierto (igual que antes) y la app te muestra un aviso de advertencia arriba, para que no pase inadvertido.
+- **Si está puesta:** la app te pide la clave una vez por dispositivo (botón **Clave**) y la guarda en ese navegador. Sin la clave correcta, los pedidos, el calendario y las notificaciones no responden.
+- La clave **no** está escrita en la página: la escribes tú, así que nadie puede sacarla mirando el código de la app.
+
+Recomendación: usa algo largo y difícil de adivinar (por ejemplo cuatro palabras juntas), porque no hay límite de intentos.
 
 ---
 
@@ -122,6 +135,8 @@ Para probar sin esperar: crea un pedido con fecha de entrega de hoy o mañana. E
 - **El calendario no se actualiza**: verifica `GOOGLE_CLIENT_ID` y `GOOGLE_CLIENT_SECRET` y que hiciste redeploy tras guardarlas.
 - **No llegan push**: revisa `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` (deben ser del MISMO par), y que hayas aceptado notificaciones en el navegador.
 - **Ver logs**: en Netlify → tu sitio → **Logs** → **Functions**.
+- **La app pide la clave y no sincroniza**: toca **Clave** y escribe el valor de `APP_PASSWORD`. Si sigue igual, revisa que la variable exista en Netlify **y** que hayas hecho redeploy después de guardarla.
+- **Aparece el aviso de que el backend no tiene clave**: es que `APP_PASSWORD` no está configurada. Mientras no la pongas, los pedidos de la nube los puede leer cualquiera que sepa la URL.
 
 ---
 

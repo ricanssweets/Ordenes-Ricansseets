@@ -1,5 +1,16 @@
 import { getStore } from '@netlify/blobs';
 
+// Vuelve a la app limpiando la cookie de state.
+function backToApp(base, query) {
+  return new Response(null, {
+    status: 302,
+    headers: {
+      Location: base + '/' + query,
+      'Set-Cookie': 'gstate=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0'
+    }
+  });
+}
+
 // Callback de OAuth: Google redirige aquí con ?code=... o ?error=...
 // Intercambia el código por tokens y guarda el refresh_token (nunca llega al navegador).
 export default async (req, context) => {
@@ -8,8 +19,17 @@ export default async (req, context) => {
 
   const code = url.searchParams.get('code');
   const error = url.searchParams.get('error');
-  if (error || !code) {
-    return Response.redirect(base + '/?gcal=error', 302);
+  const state = url.searchParams.get('state');
+
+  // El state tiene que coincidir con la cookie que dejó auth.mjs en ESTE
+  // navegador. Sin esta comprobación, un tercero podía completar el flujo a
+  // nombre de otro (CSRF de OAuth).
+  const cookies = req.headers.get('cookie') || '';
+  const match = cookies.match(/(?:^|;\s*)gstate=([^;]+)/);
+  const cookieState = match ? match[1] : '';
+
+  if (error || !code || !state || !cookieState || state !== cookieState) {
+    return backToApp(base, '?gcal=error');
   }
 
   const clientId = process.env.GOOGLE_CLIENT_ID;
@@ -31,7 +51,7 @@ export default async (req, context) => {
 
     const tokens = await tokenRes.json();
     if (!tokenRes.ok || !tokens.refresh_token) {
-      return Response.redirect(base + '/?gcal=error', 302);
+      return backToApp(base, '?gcal=error');
     }
 
     await getStore('ricans-sweets').set('oauth', JSON.stringify({
@@ -39,8 +59,8 @@ export default async (req, context) => {
       updated_at: Date.now()
     }));
 
-    return Response.redirect(base + '/?gcal=ok', 302);
+    return backToApp(base, '?gcal=ok');
   } catch (e) {
-    return Response.redirect(base + '/?gcal=error', 302);
+    return backToApp(base, '?gcal=error');
   }
 };

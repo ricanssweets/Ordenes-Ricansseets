@@ -2,6 +2,24 @@ import { getStore } from '@netlify/blobs';
 
 const STORE = 'ricans-sweets';
 
+// --- Puerta de acceso -------------------------------------------------------
+// Si APP_PASSWORD está configurado en Netlify, las funciones que tocan datos
+// exigen la cabecera X-App-Key. Sin esa variable siguen abiertas (como antes),
+// pero /health lo reporta y la app lo avisa, para que no pase inadvertido.
+// Esta misma comprobación está copiada en health.mjs, orders.mjs, push.mjs y
+// auth.mjs: si cambias una, cambia las cinco.
+function sameSecret(a, b) {
+  if (typeof a !== 'string' || typeof b !== 'string' || a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+function authorized(req) {
+  const expected = process.env.APP_PASSWORD;
+  if (!expected) return true;
+  return sameSecret(req.headers.get('x-app-key') || '', expected);
+}
+
 async function getAccessToken() {
   const raw = await getStore(STORE).get('oauth');
   const oauth = raw ? JSON.parse(raw) : null;
@@ -53,6 +71,12 @@ function eventPayload(order) {
 }
 
 export default async (req) => {
+  // Esta función actúa con el refresh token de Google guardado en el servidor:
+  // sin clave, cualquiera podría crear o borrar eventos del calendario.
+  if (!authorized(req)) {
+    return Response.json({ ok: false, error: 'unauthorized' }, { status: 401 });
+  }
+
   if (req.method !== 'POST') {
     return new Response('Method not allowed', { status: 405 });
   }
