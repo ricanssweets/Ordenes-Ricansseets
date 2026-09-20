@@ -878,6 +878,10 @@ async function updateCalendarEvent(eventId, order){
   }
   await calendarFetch('PATCH', '/calendars/primary/events/' + encodeURIComponent(eventId), eventPayload(order));
 }
+
+// Devuelve true SOLO si el evento se borró de verdad. Antes devolvía la
+// respuesta cruda del backend, que es un objeto y por tanto siempre
+// "verdadero": se limpiaba el gcalEventId aunque el borrado hubiera fallado.
 async function deleteCalendarEvent(eventId){
   if(USE_BACKEND){
     try{
@@ -886,10 +890,12 @@ async function deleteCalendarEvent(eventId){
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'delete', eventId })
       });
-      return await r.json();
-    }catch(e){ return null; }
+      const d = await r.json().catch(() => null);
+      return !!(d && d.ok);
+    }catch(e){ return false; }
   }
-  return await calendarFetch('DELETE', '/calendars/primary/events/' + encodeURIComponent(eventId));
+  const res = await calendarFetch('DELETE', '/calendars/primary/events/' + encodeURIComponent(eventId));
+  return !!res;
 }
 
 // --- Almacenamiento local ---
@@ -1102,7 +1108,9 @@ function toggleDone(id, silent){
     }
   } else {
     if(!silent) toast('Pedido reabierto');
-    if(gAccessToken){
+    // En modo backend NO existe gAccessToken (el token vive en el servidor),
+    // así que este guard impedía volver a crear el evento al reabrir.
+    if(USE_BACKEND || gAccessToken){
       createCalendarEvent(o).then(newId => {
         if(newId){ o.gcalEventId = newId; saveOrders(); }
       });
@@ -1158,7 +1166,9 @@ function doSave(){
   checkNotifications();
   toast('Pedido guardado ✓');
 
-  if(gAccessToken){
+  // En modo backend NO existe gAccessToken (el token vive en el servidor).
+  // Sin el USE_BACKEND, guardar un pedido nunca creaba el evento de Calendar.
+  if(USE_BACKEND || gAccessToken){
     if(newOrder.gcalEventId){
       updateCalendarEvent(newOrder.gcalEventId, newOrder);
     } else {
@@ -1293,8 +1303,24 @@ function checkNotifications(){
   subscribePush();
 }
 
+// `new Notification(...)` lanza excepción en Chrome de Android — justo el caso
+// normal en el teléfono — y el catch se la comía en silencio. Se usa el service
+// worker y solo se cae al constructor clásico si no hay registro disponible.
+async function showLocalNotification(title, body, tag){
+  if('serviceWorker' in navigator){
+    try{
+      const reg = await navigator.serviceWorker.getRegistration();
+      if(reg && reg.showNotification){
+        await reg.showNotification(title, { body, tag, icon: 'icon-192.png', badge: 'icon-192.png' });
+        return;
+      }
+    }catch(e){}
+  }
+  try{ new Notification(title, { body }); }catch(e){}
+}
+
 function fireDueNotifications(){
-  if(Notification.permission !== 'granted') return;
+  if(!('Notification' in window) || Notification.permission !== 'granted') return;
   const now = new Date();
   const today = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-' + String(now.getDate()).padStart(2,'0');
   const firedKey = 'ricans_sweets_notified_' + today;
@@ -1307,11 +1333,9 @@ function fireDueNotifications(){
     else if(dleft === 0) when = 'HOY';
     else if(dleft === 1) when = 'mañana';
     else when = `en ${dleft} días`;
-    try{
-      new Notification('Ricans Sweets — Pedido próximo', {
-        body: `${o.name}: entrega ${when} (${fmtDate(o.date)})`,
-      });
-    }catch(e){}
+    // El tag lleva el id del pedido: evita duplicados al repetir la llamada sin
+    // fundir en uno solo los avisos de pedidos distintos.
+    showLocalNotification('Ricans Sweets — Pedido próximo', `${o.name}: entrega ${when} (${fmtDate(o.date)})`, 'ricans-pedido-' + o.id);
   });
   sessionStorage.setItem(firedKey, '1');
 }

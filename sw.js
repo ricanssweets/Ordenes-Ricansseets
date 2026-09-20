@@ -1,7 +1,7 @@
 /* Service Worker — Rican's Sweets by Fany
    - index.html se sirve con network-first (las actualizaciones llegan de inmediato).
    - Iconos/logo se sirven con cache-first (rápidos y disponibles offline). */
-const CACHE = 'ricans-sweets-v2';
+const CACHE = 'ricans-sweets-v3';
 const ASSETS = [
   './',
   './manifest.json',
@@ -33,6 +33,13 @@ self.addEventListener('fetch', (e) => {
 
   const url = new URL(req.url);
 
+  // Llamadas a la API (Netlify Functions): el service worker NO las toca.
+  // Antes caían en la rama cache-first del final, así que la app recibía una
+  // lista de pedidos congelada en caché y la volvía a subir al backend: eso
+  // borraba los pedidos creados después de la primera visita. Al salir sin
+  // llamar a respondWith, la petición sigue su curso normal hacia la red.
+  if (url.pathname.indexOf('/.netlify/functions/') !== -1) return;
+
   // Google (fuentes y scripts): network-first con respaldo en caché.
   const isGoogle = url.hostname.includes('googleapis.com') ||
                    url.hostname.includes('gstatic.com') ||
@@ -43,7 +50,7 @@ self.addEventListener('fetch', (e) => {
         const copy = res.clone();
         caches.open(CACHE).then((c) => c.put(req, copy));
         return res;
-      }).catch(() => caches.match(req))
+      }).catch(() => caches.match(req).then((cached) => cached || Response.error()))
     );
     return;
   }
@@ -57,7 +64,17 @@ self.addEventListener('fetch', (e) => {
         const copy = res.clone();
         caches.open(CACHE).then((c) => c.put(req, copy));
         return res;
-      }).catch(() => caches.match(req))
+      }).catch(() =>
+        caches.match(req)
+          .then((cached) => cached || caches.match('./'))
+          .then((cached) => cached || new Response(
+            '<!DOCTYPE html><meta charset="utf-8"><title>Sin conexión</title>' +
+            '<body style="font-family:sans-serif;background:#0B0B0C;color:#F6F0E4;text-align:center;padding:40px">' +
+            '<h1 style="color:#D4AF37">Sin conexión</h1>' +
+            '<p>Tus pedidos siguen guardados en este dispositivo. Vuelve a abrir la app cuando recuperes internet.</p>',
+            { status: 503, headers: { 'Content-Type': 'text/html; charset=utf-8' } }
+          ))
+      )
     );
     return;
   }
@@ -73,7 +90,7 @@ self.addEventListener('fetch', (e) => {
         }
         return res;
       });
-    })
+    }).catch(() => Response.error())
   );
 });
 

@@ -33,7 +33,13 @@ export default async () => {
   let subs = [];
   try { subs = rawSubs ? JSON.parse(rawSubs) : []; } catch (e) { subs = []; }
 
-  const due = orders.filter((o) => !o.done && daysUntil(o.date) <= 2 && daysUntil(o.date) >= 0);
+  // Los atrasados cuentan como urgentes, igual que en la app (isUrgent usa
+  // daysUntil <= 2 sin límite inferior). Antes se excluían con >= 0, así que un
+  // pedido vencido nunca generaba aviso.
+  const active = orders.filter((o) => !o.done && o.date);
+  const overdue = active.filter((o) => daysUntil(o.date) < 0);
+  const soon = active.filter((o) => daysUntil(o.date) >= 0 && daysUntil(o.date) <= 2);
+  const due = soon.concat(overdue);
   if (due.length === 0 || subs.length === 0) {
     return Response.json({ ok: true, due: due.length, sent: 0 });
   }
@@ -50,11 +56,22 @@ export default async () => {
     privateKey
   );
 
+  let body;
+  if (soon.length && overdue.length) {
+    body = `${soon.length} por entregar pronto y ${overdue.length} atrasado${overdue.length === 1 ? '' : 's'}`;
+  } else if (overdue.length) {
+    body = overdue.length === 1
+      ? `${overdue[0].name}: entrega atrasada`
+      : `${overdue.length} pedidos atrasados sin entregar`;
+  } else {
+    body = soon.length === 1
+      ? `${soon[0].name}: entrega pronto`
+      : `${soon.length} pedidos por entregar en 2 días o menos`;
+  }
+
   const payload = JSON.stringify({
     title: "Rican's Sweets — Pedidos próximos",
-    body: due.length === 1
-      ? `${due[0].name}: entrega pronto`
-      : `${due.length} pedidos por entregar en 2 días o menos`,
+    body,
     url: '/'
   });
 
