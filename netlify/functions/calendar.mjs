@@ -36,19 +36,38 @@ async function getAccessToken() {
     })
   });
   const data = await res.json();
-  return data.access_token || null;
+  if (!res.ok || !data.access_token) {
+    // invalid_grant = el usuario revocó el acceso desde su cuenta de Google.
+    // Se borra el token guardado para que /health lo reporte y la app deje de
+    // decir "Calendario conectado" cuando ya no lo está.
+    if (data && data.error === 'invalid_grant') {
+      try { await getStore(STORE).delete('oauth'); } catch (e) {}
+    }
+    return null;
+  }
+  return data.access_token;
 }
 
-function eventPayload(order) {
-  const date = order.date;
+// Construye el evento a partir de la hora de pared que se escribió en la app.
+// El servidor de Netlify corre en UTC, así que NO se puede usar su zona horaria:
+// hay que recibir la del dispositivo (la manda el frontend) y calcular las
+// cadenas de fecha/hora con aritmética UTC, independiente de la zona del server.
+// Antes usaba la zona del servidor (UTC), así que un pedido de las 3:00 PM se
+// creaba a las 3:00 PM UTC: las 11:00 AM en Puerto Rico.
+function eventPayload(order, timeZone) {
+  const date = String(order.date || '');
   const time = (order.time && /^\d{2}:\d{2}$/.test(order.time)) ? order.time : '09:00';
+  const [Y, M, D] = date.split('-').map(Number);
   const [h, m] = time.split(':').map(Number);
-  const start = new Date(date + 'T00:00:00');
-  start.setHours(h, m, 0, 0);
-  const end = new Date(start.getTime() + 60 * 60000);
-  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const startMs = Date.UTC(Y, M - 1, D, h, m, 0, 0);
+  if (!isFinite(startMs)) return null;
+
   const pad = (n) => String(n).padStart(2, '0');
-  const toLocal = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:00`;
+  const wall = (ms) => {
+    const d = new Date(ms);
+    return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}T${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:00`;
+  };
+  const tz = timeZone || 'UTC';
 
   let priceTxt = '';
   const n = Number(order.price);
@@ -57,8 +76,8 @@ function eventPayload(order) {
   return {
     summary: `Entrega: ${order.name} — Rican's Sweets by Fany`,
     description: `${order.info || ''}${order.phone ? '\nTel: ' + order.phone : ''}${priceTxt ? '\nPrecio: $' + priceTxt : ''}`,
-    start: { dateTime: toLocal(start), timeZone: tz },
-    end: { dateTime: toLocal(end), timeZone: tz },
+    start: { dateTime: wall(startMs), timeZone: tz },
+    end: { dateTime: wall(startMs + 60 * 60000), timeZone: tz },
     reminders: {
       useDefault: false,
       overrides: [
@@ -88,7 +107,7 @@ export default async (req) => {
 
   let body;
   try { body = await req.json(); } catch (e) { body = {}; }
-  const { action, order, eventId } = body;
+  const { action, order, eventId, timeZone } = body;
 
   let method;
   let path;
@@ -97,18 +116,29 @@ export default async (req) => {
     path = '/calendars/primary/events';
   } else if (action === 'update') {
     method = 'PATCH';
-    path = '/calendars/primary/events/' + encodeURIComponent(eventId || (order && order.gcalEventId));
+    // Sin id, encodeURIComponent(undefined) producía la cadena "undefined" y
+    // la petición fallaba en silencio con un 404 de Google.
+    const id = eventId || (order && order.gcalEventId);
+    if (!id) return Response.json({ ok: false, error: 'no_event_id' }, { status: 400 });
+    path = '/calendars/primary/events/' + encodeURIComponent(id);
   } else if (action === 'delete') {
     method = 'DELETE';
+    if (!eventId) return Response.json({ ok: false, error: 'no_event_id' }, { status: 400 });
     path = '/calendars/primary/events/' + encodeURIComponent(eventId);
   } else {
     return Response.json({ ok: false, error: 'bad_action' }, { status: 400 });
   }
 
+  let payload = null;
+  if (method !== 'DELETE') {
+    payload = eventPayload(order || {}, timeZone);
+    if (!payload) return Response.json({ ok: false, error: 'bad_order' }, { status: 400 });
+  }
+
   const res = await fetch('https://www.googleapis.com/calendar/v3' + path, {
     method,
     headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
-    body: method === 'DELETE' ? undefined : JSON.stringify(eventPayload(order))
+    body: method === 'DELETE' ? undefined : JSON.stringify(payload)
   });
 
   if (res.status === 204) return Response.json({ ok: true });

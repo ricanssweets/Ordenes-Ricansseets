@@ -611,6 +611,8 @@ const STORAGE_KEY = 'ricans_sweets_orders_v1';
 const GCAL_CLIENTID_KEY = 'ricans_sweets_gcal_clientid';
 const GCAL_TOKEN_KEY = 'ricans_sweets_gcal_token';
 const APP_KEY_STORAGE = 'ricans_sweets_app_key';
+const SYNCED_IDS_KEY = 'ricans_sweets_synced_ids';
+const PENDING_DELETES_KEY = 'ricans_sweets_pending_deletes';
 let orders = [];
 let editingId = null;
 
@@ -661,18 +663,90 @@ async function detectBackend(){
   return null;
 }
 
+// --- Fusión con la nube -----------------------------------------------------
+// Antes la lista de la nube REEMPLAZABA la local entera. Con dos dispositivos
+// (o si anotabas pedidos mientras faltaba la clave), lo anotado aquí
+// desaparecía sin aviso. Ahora se fusiona por id.
+//
+// Para distinguir "pedido nuevo que aún no he subido" de "pedido que borraron
+// en otro dispositivo" guardamos los ids que este dispositivo ya vio en la
+// nube: si un pedido local no está en la nube y nunca lo vimos allí, es nuevo
+// y se conserva; si ya lo habíamos visto, lo borraron y se respeta el borrado.
+function getSyncedIds(){
+  try{
+    const raw = localStorage.getItem(SYNCED_IDS_KEY);
+    const arr = raw ? JSON.parse(raw) : [];
+    return new Set(Array.isArray(arr) ? arr.map(String) : []);
+  }catch(e){ return new Set(); }
+}
+function setSyncedIds(set){
+  try{ localStorage.setItem(SYNCED_IDS_KEY, JSON.stringify(Array.from(set))); }catch(e){}
+}
+// Borrados pendientes de subir. Sin esto, si borras un pedido sin conexión el
+// push no llega al servidor y en la siguiente carga el pedido reaparece, porque
+// la fusión lo ve en la nube. Se limpian cuando un POST se acepta, momento en
+// el que la nube ya tiene la lista sin ese pedido.
+function getPendingDeletes(){
+  try{
+    const raw = localStorage.getItem(PENDING_DELETES_KEY);
+    const arr = raw ? JSON.parse(raw) : [];
+    return Array.isArray(arr) ? arr.filter(d => d && d.id != null) : [];
+  }catch(e){ return []; }
+}
+function setPendingDeletes(list){
+  try{ localStorage.setItem(PENDING_DELETES_KEY, JSON.stringify(list)); }catch(e){}
+}
+function markDeleted(id){
+  const list = getPendingDeletes();
+  if(!list.some(d => String(d.id) === String(id))) list.push({ id: String(id), at: Date.now() });
+  setPendingDeletes(list);
+}
+function orderSig(list){
+  return list.map(o => o.id + ':' + (Number(o.updatedAt) || 0)).sort().join('|');
+}
+function mergeOrders(remote){
+  const synced = getSyncedIds();
+  const pending = new Map(getPendingDeletes().map(d => [String(d.id), Number(d.at) || 0]));
+  const byId = new Map();
+  remote.forEach(o => {
+    if(!o || o.id == null) return;
+    const id = String(o.id);
+    // Si lo borraste en este dispositivo y la nube todavía no se enteró,
+    // se respeta tu borrado en vez de resucitarlo.
+    if(pending.has(id) && pending.get(id) >= (Number(o.updatedAt) || 0)) return;
+    byId.set(id, o);
+  });
+  orders.forEach(local => {
+    if(!local || local.id == null) return;
+    const id = String(local.id);
+    if(pending.has(id)) return;
+    if(byId.has(id)){
+      // Está en los dos sitios: gana el que se tocó más recientemente.
+      const r = byId.get(id);
+      if((Number(local.updatedAt) || 0) > (Number(r.updatedAt) || 0)) byId.set(id, local);
+    } else if(!synced.has(id)){
+      // Nunca vino de la nube: es un pedido creado aquí y todavía sin subir.
+      byId.set(id, local);
+    }
+    // Si no está en la nube pero sí en synced, lo borraron en otro dispositivo.
+  });
+  return Array.from(byId.values());
+}
+
 async function pullOrdersFromBackend(){
   try{
     const res = await apiFetch('/orders', { cache: 'no-store' });
     if(!res.ok) return;
     const data = await res.json();
-    if(Array.isArray(data.orders) && data.orders.length > 0){
-      orders = data.orders;
-      saveOrders(); // refleja en localStorage local
-    } else if(orders.length > 0){
-      // backend vacío: sube los pedidos locales
-      syncToBackend();
-    }
+    if(!Array.isArray(data.orders)) return;
+
+    const merged = mergeOrders(data.orders);
+    orders = merged;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(orders));
+    setSyncedIds(new Set(orders.map(o => String(o.id))));
+
+    // Si la fusión aporta algo que la nube no tiene, se sube.
+    if(orderSig(merged) !== orderSig(data.orders)) syncToBackend();
   }catch(e){}
 }
 
@@ -681,10 +755,16 @@ function syncToBackend(){
   if(!USE_BACKEND) return;
   clearTimeout(syncTimer);
   syncTimer = setTimeout(() => {
+    const payload = JSON.stringify({ orders });
+    const ids = orders.map(o => String(o.id));
     apiFetch('/orders', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ orders })
+      body: payload
+    }).then(r => {
+      // Solo tras un POST aceptado consta que la nube tiene esta lista: ahí ya
+      // se pueden olvidar los borrados pendientes.
+      if(r && r.ok){ setSyncedIds(new Set(ids)); setPendingDeletes([]); }
     }).catch(() => {});
   }, 400);
 }
@@ -940,15 +1020,34 @@ async function calendarFetch(method, path, body){
   }
 }
 
+// El servidor de Netlify corre en UTC. Sin mandarle la zona del dispositivo, un
+// pedido de las 3:00 PM se crearía a las 3:00 PM UTC: las 11:00 AM en Puerto Rico.
+function clientTimeZone(){
+  try{
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+  }catch(e){ return 'UTC'; }
+}
+
+// El backend responde no_token cuando el refresh_token guardado ya no sirve
+// (por ejemplo, si revocaste el acceso desde tu cuenta de Google). Antes la app
+// seguía diciendo "Calendario conectado" y no había manera de enterarse.
+function noteCalendarAuthFailure(){
+  if(!USE_BACKEND || !BACKEND_GOOGLE_CONNECTED) return;
+  BACKEND_GOOGLE_CONNECTED = false;
+  updateGcalBar();
+  toast('Se perdió la conexión con Google Calendar. Vuelve a conectar.');
+}
+
 async function createCalendarEvent(order){
   if(USE_BACKEND){
     try{
       const r = await apiFetch('/calendar', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'create', order })
+        body: JSON.stringify({ action: 'create', order, timeZone: clientTimeZone() })
       });
       const d = await r.json();
+      if(d && d.error === 'no_token') noteCalendarAuthFailure();
       return d && d.ok && d.id ? d.id : null;
     }catch(e){ return null; }
   }
@@ -958,11 +1057,13 @@ async function createCalendarEvent(order){
 async function updateCalendarEvent(eventId, order){
   if(USE_BACKEND){
     try{
-      await apiFetch('/calendar', {
+      const r = await apiFetch('/calendar', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'update', order, eventId })
+        body: JSON.stringify({ action: 'update', order, eventId, timeZone: clientTimeZone() })
       });
+      const d = await r.json().catch(() => null);
+      if(d && d.error === 'no_token') noteCalendarAuthFailure();
     }catch(e){}
     return;
   }
@@ -981,6 +1082,7 @@ async function deleteCalendarEvent(eventId){
         body: JSON.stringify({ action: 'delete', eventId })
       });
       const d = await r.json().catch(() => null);
+      if(d && d.error === 'no_token') noteCalendarAuthFailure();
       return !!(d && d.ok);
     }catch(e){ return false; }
   }
@@ -1002,25 +1104,29 @@ function saveOrders(){
 }
 
 // --- Utilidades de fecha / precio / teléfono ---
+// Devuelve los días que faltan, o null si la fecha no es válida. Antes devolvía
+// 0, así que un pedido con la fecha corrupta salía como "Hoy" y como urgente.
 function daysUntil(dateStr){
+  if(!dateStr) return null;
+  const parts = String(dateStr).split('-');
+  if(parts.length !== 3) return null;
+  const y = Number(parts[0]), m = Number(parts[1]), d = Number(parts[2]);
+  if(!y || !m || !d) return null;
+  const targetUTC = Date.UTC(y, m - 1, d);
+  if(isNaN(targetUTC)) return null;
   const today = new Date();
   const todayUTC = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
-  if(!dateStr) return 0;
-  const parts = String(dateStr).split('-');
-  if(parts.length !== 3) return 0;
-  const y = Number(parts[0]), m = Number(parts[1]), d = Number(parts[2]);
-  if(!y || !m || !d) return 0;
-  const targetUTC = Date.UTC(y, m - 1, d);
-  if(isNaN(targetUTC)) return 0;
   return Math.round((targetUTC - todayUTC) / 86400000);
 }
 
 function isUrgent(o){
-  return !o.done && daysUntil(o.date) <= 2;
+  const d = daysUntil(o.date);
+  return !o.done && d !== null && d <= 2;
 }
 
 function fmtDate(dateStr){
   const d = new Date(dateStr + 'T00:00:00');
+  if(isNaN(d.getTime())) return 'sin fecha';
   return d.toLocaleDateString('es-PR', { weekday:'short', day:'numeric', month:'short' });
 }
 
@@ -1048,10 +1154,12 @@ function formatPhone(value){
   return p1;
 }
 
+// Escapa también las comillas: el resultado se usa dentro de atributos HTML
+// (data-edit="..."), no solo como texto.
 function escapeHTML(str){
   const div = document.createElement('div');
-  div.textContent = str;
-  return div.innerHTML;
+  div.textContent = str == null ? '' : String(str);
+  return div.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
 // --- Render ---
@@ -1076,7 +1184,10 @@ function render(){
 
   document.getElementById('statTotal').textContent = orders.filter(o => !o.done).length;
   document.getElementById('statUrgent').textContent = orders.filter(isUrgent).length;
-  document.getElementById('statWeek').textContent = orders.filter(o => !o.done && daysUntil(o.date) <= 7 && daysUntil(o.date) >= 0).length;
+  document.getElementById('statWeek').textContent = orders.filter(o => {
+    const d = daysUntil(o.date);
+    return !o.done && d !== null && d >= 0 && d <= 7;
+  }).length;
 
   let html = '';
   if(pending.length){
@@ -1108,6 +1219,7 @@ function cardHTML(o){
   const urgent = isUrgent(o);
   let dNum, dLabel;
   if(o.done){ dNum = '✓'; dLabel = 'Listo'; }
+  else if(dleft === null){ dNum = '—'; dLabel = 'sin fecha'; }
   else if(dleft < 0){ dNum = Math.abs(dleft); dLabel = dleft === -1 ? 'día atraso' : 'días atraso'; }
   else if(dleft === 0){ dNum = 'Hoy'; dLabel = 'entrega'; }
   else { dNum = dleft; dLabel = dleft === 1 ? 'día' : 'días'; }
@@ -1179,6 +1291,7 @@ function toggleDone(id, silent){
   const o = orders.find(x => x.id === id);
   if(!o) return;
   o.done = !o.done;
+  o.updatedAt = Date.now();
   saveOrders();
   render();
   checkNotifications();
@@ -1213,6 +1326,7 @@ function deleteOrder(id){
   if(!o) return;
   askConfirm('¿Eliminar el pedido de ' + o.name + '?', () => {
     orders = orders.filter(x => x.id !== id);
+    markDeleted(id);
     saveOrders();
     render();
     checkNotifications();
@@ -1249,6 +1363,8 @@ function doSave(){
     newOrder = { id: Date.now().toString(), done:false, ...data };
     orders.push(newOrder);
   }
+  // Marca de tiempo: al fusionar con la nube gana la versión más reciente.
+  newOrder.updatedAt = Date.now();
 
   saveOrders();
   closeSheet();
@@ -1339,10 +1455,16 @@ function importJSON(file){
       const list = Array.isArray(data) ? data : (data && Array.isArray(data.orders) ? data.orders : null);
       if(!list) throw new Error('formato inválido');
       let added = 0, updated = 0;
+      const importedAt = Date.now();
       list.forEach(item => {
         if(!item || typeof item !== 'object' || !item.name || !item.date) return;
         if(!/^\d{4}-\d{2}-\d{2}$/.test(String(item.date))) return;
-        const id = item.id != null ? String(item.id) : (Date.now().toString() + Math.random().toString(36).slice(2));
+        // El id acaba dentro de un atributo HTML (data-edit="..."): solo se
+        // acepta con forma segura; si no, se genera uno nuevo.
+        let id = item.id != null ? String(item.id) : '';
+        if(!/^[A-Za-z0-9_-]{1,64}$/.test(id)){
+          id = Date.now().toString() + Math.random().toString(36).slice(2);
+        }
         const clean = {
           id,
           name: String(item.name),
@@ -1352,7 +1474,8 @@ function importJSON(file){
           info: item.info || '',
           time: item.time || '',
           price: item.price != null ? String(item.price) : '',
-          gcalEventId: item.gcalEventId || null
+          gcalEventId: item.gcalEventId || null,
+          updatedAt: importedAt
         };
         const existing = orders.find(x => x.id === id);
         if(existing){ Object.assign(existing, clean); updated++; }

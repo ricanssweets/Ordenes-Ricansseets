@@ -76,14 +76,19 @@ export default async () => {
   });
 
   let sent = 0;
+  const dead = [];
   for (const sub of subs) {
     try {
       await webpush.sendNotification(sub, payload);
       sent++;
     } catch (e) {
-      // Suscripción inválida/expirada: se ignora.
+      // 404/410 = suscripción caducada: se borra en vez de reintentar cada día.
+      if (e && (e.statusCode === 404 || e.statusCode === 410)) dead.push(sub.endpoint);
     }
   }
+  if (dead.length) {
+    await s.set('push-subscriptions', JSON.stringify(subs.filter((x) => dead.indexOf(x.endpoint) === -1)));
+  }
 
-  return Response.json({ ok: true, due: due.length, sent });
+  return Response.json({ ok: true, due: due.length, sent, removed: dead.length });
 };

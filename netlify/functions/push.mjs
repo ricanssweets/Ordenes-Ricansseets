@@ -45,8 +45,12 @@ export default async (req) => {
   if (body.action === 'subscribe') {
     const sub = body.subscription;
     if (!sub || !sub.endpoint) return Response.json({ ok: false }, { status: 400 });
-    const exists = subs.some((x) => x.endpoint === sub.endpoint);
-    if (!exists) subs.push(sub);
+    // Si el endpoint ya existe se REEMPLAZA: cuando el navegador rota las claves
+    // reutiliza el mismo endpoint, y conservar la vieja hacía que el push
+    // fallara en silencio para siempre.
+    const i = subs.findIndex((x) => x.endpoint === sub.endpoint);
+    if (i === -1) subs.push(sub);
+    else subs[i] = sub;
     await s.set(KEY, JSON.stringify(subs));
     return Response.json({ ok: true, count: subs.length });
   }
@@ -73,10 +77,20 @@ export default async (req) => {
       url: '/'
     });
     let sent = 0;
+    const dead = [];
     for (const sub of subs) {
-      try { await webpush.sendNotification(sub, payload); sent++; } catch (e) { /* suscripción inválida */ }
+      try { await webpush.sendNotification(sub, payload); sent++; }
+      catch (e) {
+        // 404/410 = esa suscripción ya no existe: se borra en vez de acumularla
+        // y reintentar contra ella en cada envío.
+        if (e && (e.statusCode === 404 || e.statusCode === 410)) dead.push(sub.endpoint);
+      }
     }
-    return Response.json({ ok: true, sent });
+    if (dead.length) {
+      subs = subs.filter((x) => dead.indexOf(x.endpoint) === -1);
+      await s.set(KEY, JSON.stringify(subs));
+    }
+    return Response.json({ ok: true, sent, removed: dead.length });
   }
 
   return Response.json({ ok: false, error: 'bad_action' }, { status: 400 });
