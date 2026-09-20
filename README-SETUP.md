@@ -123,7 +123,7 @@ Desde ahora, al guardar un pedido, el evento se crea/actualiza/borra en tu calen
 
 1. En la app (URL de Netlify), toca **"Activar"** en el aviso de notificaciones (o acepta cuando el navegador lo pida).
 2. La app se suscribe automáticamente a push.
-3. Cada día (~9 AM hora del este), el sistema revisa si hay pedidos por entregar en 2 días o menos y te manda un **push** aunque no tengas la app abierta.
+3. Cada día (~9 AM en Puerto Rico), el sistema revisa si hay pedidos por entregar en 2 días o menos —o ya atrasados— y te manda un **push** aunque no tengas la app abierta.
 
 Para probar sin esperar: crea un pedido con fecha de entrega de hoy o mañana. El push se enviará en la próxima ejecución diaria.
 

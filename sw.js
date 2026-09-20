@@ -11,6 +11,29 @@ const ASSETS = [
   './icon-180.png'
 ];
 
+// La caché de fuentes/scripts de Google no crece sin control: se limita y se van
+// quitando las entradas más antiguas. Solo se tocan entradas de Google; las de
+// la app (el HTML, los iconos) nunca se borran desde aquí.
+const GOOGLE_CACHE_MAX = 40;
+function trimGoogleCache(){
+  const isGoogleUrl = (u) => {
+    try {
+      const h = new URL(u).hostname;
+      return h.indexOf('googleapis.com') !== -1 ||
+             h.indexOf('gstatic.com') !== -1 ||
+             h.indexOf('accounts.google.com') !== -1;
+    } catch (e) { return false; }
+  };
+  return caches.open(CACHE)
+    .then((c) => c.keys().then((keys) => {
+      const google = keys.filter((r) => isGoogleUrl(r.url));
+      const excess = google.length - GOOGLE_CACHE_MAX;
+      if (excess <= 0) return undefined;
+      return Promise.all(google.slice(0, excess).map((r) => c.delete(r)));
+    }))
+    .catch(() => {});
+}
+
 self.addEventListener('install', (e) => {
   e.waitUntil(
     caches.open(CACHE)
@@ -48,7 +71,7 @@ self.addEventListener('fetch', (e) => {
     e.respondWith(
       fetch(req).then((res) => {
         const copy = res.clone();
-        caches.open(CACHE).then((c) => c.put(req, copy));
+        caches.open(CACHE).then((c) => c.put(req, copy)).then(trimGoogleCache);
         return res;
       }).catch(() => caches.match(req).then((cached) => cached || Response.error()))
     );

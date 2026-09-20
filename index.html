@@ -495,7 +495,7 @@
   <div class="summary">
     <div class="pill">
       <span class="num" id="statTotal">0</span>
-      <span class="lbl">Pedidos</span>
+      <span class="lbl">Pendientes</span>
     </div>
     <div class="pill alert">
       <span class="num" id="statUrgent">0</span>
@@ -627,6 +627,7 @@ let PUSH_PUBLIC_KEY = '';
 let BACKEND_GOOGLE_CONNECTED = false;
 let BACKEND_AUTH_REQUIRED = false;
 let BACKEND_AUTHORIZED = true;
+let pushSubscribeTried = false;
 
 // --- Clave de la app (solo si el backend tiene APP_PASSWORD en Netlify) ---
 function getAppKey(){ return localStorage.getItem(APP_KEY_STORAGE) || ''; }
@@ -780,6 +781,10 @@ function urlBase64ToUint8Array(base64String){
 
 async function subscribePush(){
   if(!USE_BACKEND || !PUSH_PUBLIC_KEY) return;
+  // checkNotifications() se llama tras cada guardado: sin esto se repetía el
+  // POST de suscripción una y otra vez en la misma carga. Si falla no se marca,
+  // para poder reintentarlo.
+  if(pushSubscribeTried) return;
   try{
     const reg = await navigator.serviceWorker.ready;
     let sub = await reg.pushManager.getSubscription();
@@ -794,6 +799,7 @@ async function subscribePush(){
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'subscribe', subscription: sub })
     });
+    pushSubscribeTried = true;
   }catch(e){}
 }
 
@@ -1631,13 +1637,20 @@ function trapFocus(e){
   }
 }
 
-// Cerrar paneles con Escape y mantener el foco dentro del modal abierto
+// Cerrar paneles con Escape y mantener el foco dentro del modal abierto.
+// Solo se cierra lo que está abierto: antes se llamaba a los cuatro cierres
+// siempre, así que pulsar Escape en cualquier parte limpiaba el formulario y
+// descartaba el pedido en edición aunque la hoja estuviera cerrada.
+function isPanelOpen(id){
+  const el = document.getElementById(id);
+  return !!el && el.classList.contains('open');
+}
 document.addEventListener('keydown', (e) => {
   if(e.key === 'Escape'){
-    closeSheet();
-    closeGcalSheet();
-    closeKeySheet();
-    closeConfirm();
+    if(isPanelOpen('sheet')) closeSheet();
+    if(isPanelOpen('gcalSheet')) closeGcalSheet();
+    if(isPanelOpen('keySheet')) closeKeySheet();
+    if(isPanelOpen('confirmModal')) closeConfirm();
     return;
   }
   trapFocus(e);

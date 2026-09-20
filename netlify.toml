@@ -9,3 +9,51 @@
 
 [functions]
   directory = "netlify/functions"
+
+# --- Cabeceras de seguridad --------------------------------------------------
+# A propósito NO se pone una Content-Security-Policy completa ni
+# Cross-Origin-Opener-Policy:
+#   - Una CSP estricta rompería la app, que usa <style> y <script> en línea y
+#     carga fuentes y el cliente de Google. Ajustarla mal no se puede detectar
+#     sin desplegar, así que aquí solo se fija frame-ancestors.
+#   - COOP rompería la ventana emergente del flujo de Google, que necesita
+#     conservar el opener.
+# Referrer-Policy evita que la URL con la clave (la del flujo de conexión de
+# Google) se filtre a otros sitios a través del encabezado Referer.
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Content-Type-Options = "nosniff"
+    X-Frame-Options = "DENY"
+    Content-Security-Policy = "frame-ancestors 'none'"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+
+# --- No publicar archivos que solo sirven para construir ---------------------
+# El sitio se publica desde la raíz, así que estos archivos quedarían
+# descargables. No contienen secretos (todo sale de variables de entorno), pero
+# no hay razón para servirlos. Los archivos estáticos tienen prioridad sobre las
+# redirecciones, de ahí "force".
+# OJO: no afecta a /.netlify/functions/*, que empieza por "/." y no por "/netlify/".
+[[redirects]]
+  from = "/netlify/*"
+  to = "/404.html"
+  status = 404
+  force = true
+
+[[redirects]]
+  from = "/README-SETUP.md"
+  to = "/404.html"
+  status = 404
+  force = true
+
+[[redirects]]
+  from = "/package.json"
+  to = "/404.html"
+  status = 404
+  force = true
+
+[[redirects]]
+  from = "/netlify.toml"
+  to = "/404.html"
+  status = 404
+  force = true

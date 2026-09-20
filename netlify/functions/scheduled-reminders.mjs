@@ -19,7 +19,7 @@ function daysUntil(dateStr) {
 }
 
 // Se ejecuta una vez al día. Envía push si hay pedidos por entregar en 2 días o menos.
-// 0 13 * * * = 13:00 UTC ≈ 9 AM (hora del este, EE.UU., en invierno).
+// 0 13 * * * = 13:00 UTC = 9 AM en Puerto Rico, que es UTC-4 todo el año (sin horario de verano).
 export const config = { schedule: '0 13 * * *' };
 
 export default async () => {
