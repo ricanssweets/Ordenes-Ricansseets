@@ -352,6 +352,24 @@
   .row2{ display:flex; gap:10px; }
   .row2 .field{ flex:1; }
 
+  /* Sugerencias de clientes anteriores */
+  .ac{ position:relative; }
+  .suggest{
+    position:absolute; left:0; right:0; top:calc(100% + 4px);
+    background:var(--card-2); border:1px solid var(--gold); border-radius:12px;
+    overflow-x:hidden; overflow-y:auto; max-height:230px;
+    z-index:6; box-shadow:0 12px 28px rgba(0,0,0,.55);
+  }
+  .suggest[hidden]{ display:none; }
+  .suggest button{
+    display:block; width:100%; text-align:left; background:none; border:none;
+    border-bottom:1px solid var(--line); color:var(--cream);
+    font-family:inherit; font-size:14px; padding:10px 12px; cursor:pointer;
+  }
+  .suggest button:last-child{ border-bottom:none; }
+  .suggest button.active, .suggest button:hover{ background:rgba(212,175,55,.14); }
+  .suggest .s-phone{ display:block; color:var(--cream-dim); font-size:12px; margin-top:2px; }
+
   .sheet-actions{
     display:flex;
     gap:10px;
@@ -536,7 +554,11 @@
   <h2 id="sheetTitle">Nuevo pedido</h2>
   <div class="field">
     <label for="fName">Nombre del cliente</label>
-    <input type="text" id="fName" placeholder="Ej. María Rivera" autocomplete="name">
+    <div class="ac">
+      <input type="text" id="fName" placeholder="Ej. María Rivera" autocomplete="off"
+             role="combobox" aria-expanded="false" aria-autocomplete="list" aria-controls="clientSuggest">
+      <div class="suggest" id="clientSuggest" role="listbox" aria-label="Clientes anteriores" hidden></div>
+    </div>
   </div>
   <div class="field">
     <label for="fPhone">Teléfono</label>
@@ -701,6 +723,11 @@ function markDeleted(id){
   const list = getPendingDeletes();
   if(!list.some(d => String(d.id) === String(id))) list.push({ id: String(id), at: Date.now() });
   setPendingDeletes(list);
+}
+// Deshacer un borrado: hay que quitar la lápida, si no la fusión con la nube
+// seguiría dando el pedido por borrado y no volvería a aparecer.
+function unmarkDeleted(id){
+  setPendingDeletes(getPendingDeletes().filter(d => String(d.id) !== String(id)));
 }
 function orderSig(list){
   return list.map(o => o.id + ':' + (Number(o.updatedAt) || 0)).sort().join('|');
@@ -1277,6 +1304,7 @@ function clearForm(){
   document.getElementById('fTime').value = '';
   document.getElementById('fPrice').value = '';
   document.getElementById('sheetTitle').textContent = 'Nuevo pedido';
+  hideClientSuggest();
 }
 
 function openEdit(id){
@@ -1331,18 +1359,152 @@ function deleteOrder(id){
   const o = orders.find(x => x.id === id);
   if(!o) return;
   askConfirm('¿Eliminar el pedido de ' + o.name + '?', () => {
+    const removed = o;
+    const position = orders.findIndex(x => x.id === id);
     orders = orders.filter(x => x.id !== id);
     markDeleted(id);
     saveOrders();
     render();
     checkNotifications();
-    toast('Pedido eliminado');
-    if(o.gcalEventId) deleteCalendarEvent(o.gcalEventId);
+
+    // Se guarda la promesa del borrado del evento de Calendar para el caso de
+    // deshacer: así no queda un evento huérfano ni se crea uno duplicado.
+    const eventRemoval = removed.gcalEventId
+      ? deleteCalendarEvent(removed.gcalEventId)
+      : Promise.resolve(true);
+
+    toast('Pedido eliminado', {
+      action: 'Deshacer',
+      duration: 8000,
+      onAction: () => {
+        unmarkDeleted(id);
+        removed.gcalEventId = null;
+        removed.updatedAt = Date.now();
+        if(position >= 0 && position <= orders.length) orders.splice(position, 0, removed);
+        else orders.push(removed);
+        saveOrders();
+        render();
+        checkNotifications();
+        toast('Pedido restaurado ✓');
+
+        // El evento se vuelve a crear DESPUÉS de que termine el borrado.
+        if(USE_BACKEND || gAccessToken){
+          eventRemoval.then(() => {
+            createCalendarEvent(removed).then(newId => {
+              if(newId){ removed.gcalEventId = newId; saveOrders(); }
+            });
+          });
+        }
+      }
+    });
   }, 'Eliminar');
 }
 
 document.getElementById('fPhone').addEventListener('input', (e) => {
   e.target.value = formatPhone(e.target.value);
+});
+
+// --- Sugerencias de clientes anteriores -------------------------------------
+// Ahorra teclear el nombre y, sobre todo, el teléfono: un número mal escrito es
+// un pedido que no se puede entregar.
+function buildClientIndex(){
+  const map = new Map();
+  orders.forEach(o => {
+    const name = (o.name || '').trim();
+    if(!name) return;
+    const key = name.toLowerCase();
+    const at = Number(o.updatedAt) || 0;
+    let e = map.get(key);
+    if(!e){ e = { name, phone: '', at: 0, count: 0 }; map.set(key, e); }
+    e.count++;
+    // Del cliente se guarda su nombre y teléfono más recientes.
+    if(at >= e.at){
+      e.at = at;
+      e.name = name;
+      if(o.phone) e.phone = o.phone;
+    }
+  });
+  return Array.from(map.values()).sort((a, b) => b.at - a.at);
+}
+
+function matchClients(query){
+  const q = query.trim().toLowerCase();
+  if(q.length < 2) return [];
+  const digits = q.replace(/\D/g, '');
+  return buildClientIndex().filter(c => {
+    if(c.name.toLowerCase().indexOf(q) !== -1) return true;
+    // También se puede buscar por teléfono: "561" encuentra a ese cliente.
+    if(digits.length >= 3 && c.phone.replace(/\D/g, '').indexOf(digits) !== -1) return true;
+    return false;
+  }).slice(0, 5);
+}
+
+let suggestIndex = -1;
+
+function hideClientSuggest(){
+  const box = document.getElementById('clientSuggest');
+  suggestIndex = -1;
+  if(box.hidden) return;
+  box.hidden = true;
+  box.innerHTML = '';
+  document.getElementById('fName').setAttribute('aria-expanded', 'false');
+}
+
+function renderClientSuggest(){
+  const input = document.getElementById('fName');
+  const box = document.getElementById('clientSuggest');
+  const list = matchClients(input.value);
+  if(!list.length){ hideClientSuggest(); return; }
+  suggestIndex = -1;
+  box.innerHTML = list.map((c, i) =>
+    '<button type="button" role="option" data-i="' + i + '">' + escapeHTML(c.name) +
+    (c.phone ? '<span class="s-phone">' + escapeHTML(c.phone) + '</span>' : '') +
+    '</button>'
+  ).join('');
+  box.hidden = false;
+  input.setAttribute('aria-expanded', 'true');
+  box.querySelectorAll('button[data-i]').forEach(btn => {
+    btn.addEventListener('click', () => pickClient(list[Number(btn.dataset.i)]));
+  });
+}
+
+function pickClient(c){
+  if(!c) return;
+  document.getElementById('fName').value = c.name;
+  const phoneEl = document.getElementById('fPhone');
+  // El teléfono solo se rellena si está vacío: no se pisa lo que ya escribiste.
+  if(c.phone && !phoneEl.value.trim()) phoneEl.value = formatPhone(c.phone);
+  hideClientSuggest();
+}
+
+document.getElementById('fName').addEventListener('input', renderClientSuggest);
+document.getElementById('fName').addEventListener('keydown', (e) => {
+  const box = document.getElementById('clientSuggest');
+  if(box.hidden) return;
+  const items = Array.from(box.querySelectorAll('button[data-i]'));
+  if(!items.length) return;
+  if(e.key === 'ArrowDown' || e.key === 'ArrowUp'){
+    e.preventDefault();
+    suggestIndex = e.key === 'ArrowDown'
+      ? (suggestIndex + 1) % items.length
+      : (suggestIndex - 1 + items.length) % items.length;
+    items.forEach((b, i) => b.classList.toggle('active', i === suggestIndex));
+    return;
+  }
+  if(e.key === 'Enter' && suggestIndex >= 0){
+    e.preventDefault();
+    items[suggestIndex].click();
+    return;
+  }
+  if(e.key === 'Escape'){
+    // Escape cierra solo la lista, no la hoja entera.
+    e.preventDefault();
+    e.stopPropagation();
+    hideClientSuggest();
+  }
+});
+document.addEventListener('click', (e) => {
+  if(!e.target || !e.target.closest || !e.target.closest('#clientSuggest')) hideClientSuggest();
 });
 
 document.getElementById('openAdd').addEventListener('click', () => { clearForm(); openSheet(); });
@@ -1580,7 +1742,9 @@ function toast(msg, opts){
   }
   el.classList.add('show');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(hideToast, 4000);
+  // Los avisos con acción duran más: hay que dar tiempo a pulsarla.
+  const ms = (opts && opts.duration) || (opts && opts.action ? 7000 : 4000);
+  toastTimer = setTimeout(hideToast, ms);
 }
 function hideToast(){
   document.getElementById('toast').classList.remove('show');
