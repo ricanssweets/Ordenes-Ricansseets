@@ -1833,12 +1833,14 @@ document.getElementById('importFile').addEventListener('change', (e) => {
 document.getElementById('printBtn').addEventListener('click', () => window.print());
 
 // --- Service Worker (offline / PWA) ---
+// Se registra DE INMEDIATO, sin esperar al evento load. Mientras no haya un
+// service worker activo, Chrome no considera la app instalable, así que esperar
+// al final de la carga alarga la ventana en la que "Añadir a pantalla de inicio"
+// crea un acceso directo (con el cuadradito de Chrome) en vez de instalar la app.
 if('serviceWorker' in navigator){
   const isHttpsOrLocal = location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1';
   if(isHttpsOrLocal){
-    window.addEventListener('load', () => {
-      navigator.serviceWorker.register('sw.js').catch(e => console.warn('SW no registrado:', e));
-    });
+    navigator.serviceWorker.register('sw.js').catch(e => console.warn('SW no registrado:', e));
   }
 }
 
