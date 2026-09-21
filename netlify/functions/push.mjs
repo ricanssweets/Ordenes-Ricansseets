@@ -22,8 +22,9 @@ function authorized(req) {
   return sameSecret(req.headers.get('x-app-key') || '', expected);
 }
 
-// Guarda/quita suscripciones push de los dispositivos, y permite enviar una
+// Registra las suscripciones push de los dispositivos y permite enviar una
 // notificación de prueba al instante (acción "test").
+// (Hubo una acción "unsubscribe" que la app no llamaba nunca; se quitó.)
 export default async (req) => {
   // "test" manda un aviso a todos los dispositivos: sin clave sería spam fácil.
   if (!authorized(req)) {
@@ -51,12 +52,6 @@ export default async (req) => {
     const i = subs.findIndex((x) => x.endpoint === sub.endpoint);
     if (i === -1) subs.push(sub);
     else subs[i] = sub;
-    await s.set(KEY, JSON.stringify(subs));
-    return Response.json({ ok: true, count: subs.length });
-  }
-
-  if (body.action === 'unsubscribe') {
-    subs = subs.filter((x) => x.endpoint !== body.endpoint);
     await s.set(KEY, JSON.stringify(subs));
     return Response.json({ ok: true, count: subs.length });
   }

@@ -1,11 +1,11 @@
 /* Service Worker — Rican's Sweets by Fany
    - index.html se sirve con network-first (las actualizaciones llegan de inmediato).
    - Iconos/logo se sirven con cache-first (rápidos y disponibles offline). */
-const CACHE = 'ricans-sweets-v3';
+const CACHE = 'ricans-sweets-v4';
 const ASSETS = [
   './',
   './manifest.json',
-  './logo.png',
+  './logo.jpg',
   './icon-192.png',
   './icon-512.png',
   './icon-180.png'

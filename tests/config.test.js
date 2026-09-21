@@ -47,7 +47,22 @@ async function run(check) {
     const malos = [].concat(...mf.icons.map((i) => String(i.purpose || 'any').split(' ')))
       .filter((p) => validos.indexOf(p) === -1);
     check('los "purpose" de los iconos son válidos', malos.length === 0, malos.join(', '));
-    check('tiene los tres iconos', mf.icons.length === 3, String(mf.icons.length));
+    // Chrome exige un icono de 192 y otro de 512. El de 180 es solo para el
+    // enlace apple-touch-icon del HTML, así que no va en el manifest.
+    check('están los dos iconos que Chrome exige (192 y 512)',
+      mf.icons.length === 2 &&
+      mf.icons.some((i) => i.sizes === '192x192') &&
+      mf.icons.some((i) => i.sizes === '512x512'),
+      JSON.stringify(mf.icons.map((i) => i.sizes)));
+    check('cada icono declarado existe en el repo',
+      mf.icons.every((i) => fs.existsSync(path.join(REPO, i.src))),
+      mf.icons.map((i) => i.src).filter((s) => !fs.existsSync(path.join(REPO, s))).join(', '));
+    // Comprobado con Chrome de verdad: con los iconos en JPEG, su comprobacion
+    // interna devuelve "manifest-missing-suitable-icon" y la app DEJA DE SER
+    // INSTALABLE. Por eso los del manifest tienen que seguir siendo PNG.
+    check('los iconos del manifest son PNG (Chrome rechaza JPEG y no se puede instalar)',
+      mf.icons.every((i) => i.type === 'image/png' && /\.png$/.test(i.src)),
+      JSON.stringify(mf.icons.map((i) => i.src + ' ' + i.type)));
   }
 
   // ------------------------------------------------------------------ index.html ---

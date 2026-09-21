@@ -523,7 +523,6 @@
     .order-card.urgent .stamp{ border-color:#c00; color:#c00; }
   }
 </style>
-<script src="https://accounts.google.com/gsi/client" async defer></script>
 <link rel="manifest" href="manifest.json">
 <link rel="icon" type="image/png" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-180.png">
@@ -535,7 +534,7 @@
 <body>
 
 <header>
-  <img class="logo" src="logo.png" alt="Logo de Rican's Sweets by Fany">
+  <img class="logo" src="logo.jpg" alt="Logo de Rican's Sweets by Fany">
   <div class="eyebrow">Postres Boricuas</div>
   <h1>Rican's Sweets<br><span style="font-size:16px; -webkit-text-fill-color: var(--gold-light);">by Fany</span></h1>
   <p class="tag">Libro de pedidos</p>
@@ -682,6 +681,25 @@
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <script>
+// El cliente de Google (gsi) solo se necesita para el flujo del navegador, el de
+// la versión de GitHub Pages, que no tiene backend. Se carga a petición desde
+// connectGoogle() en vez de en el <head>, para no descargarlo en balde en cada
+// visita a la versión de Netlify.
+let gsiPromise = null;
+function loadGsi(){
+  if(window.google && window.google.accounts) return Promise.resolve(true);
+  if(gsiPromise) return gsiPromise;
+  gsiPromise = new Promise((resolve) => {
+    const s = document.createElement('script');
+    s.src = 'https://accounts.google.com/gsi/client';
+    s.async = true;
+    s.defer = true;
+    s.onload = () => resolve(true);
+    s.onerror = () => { gsiPromise = null; resolve(false); };
+    (document.head || document.body).appendChild(s);
+  });
+  return gsiPromise;
+}
 const STORAGE_KEY = 'ricans_sweets_orders_v1';
 const GCAL_CLIENTID_KEY = 'ricans_sweets_gcal_clientid';
 const GCAL_TOKEN_KEY = 'ricans_sweets_gcal_token';
@@ -1032,7 +1050,14 @@ function connectGoogle(){
   const clientId = getClientId();
   if(!clientId){ openGcalSheet(); return; }
   if(!window.google || !google.accounts){
-    toast('Google aún está cargando, intenta de nuevo en un segundo.');
+    // El cliente de Google se carga AQUÍ, solo cuando de verdad hace falta.
+    // Antes iba en el <head> y se descargaba en cada visita, incluso en Netlify,
+    // donde este camino no se usa nunca.
+    toast('Cargando Google…');
+    loadGsi().then((ok) => {
+      if(ok) connectGoogle();
+      else toast('No se pudo cargar Google. Revisa tu conexión.');
+    });
     return;
   }
   gTokenClient = google.accounts.oauth2.initTokenClient({
