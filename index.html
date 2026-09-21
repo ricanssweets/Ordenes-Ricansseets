@@ -159,6 +159,27 @@
     opacity:.8;
   }
 
+  /* Cabecera de cada día de entrega: lo que se mira al sentarse a producir */
+  .day-head{
+    display:flex;
+    align-items:baseline;
+    justify-content:space-between;
+    gap:10px;
+    margin: 22px 4px 10px;
+  }
+  .day-head .d-name{
+    font-size:12px; text-transform:uppercase; letter-spacing:.12em;
+    color: var(--gold); opacity:.85;
+  }
+  .day-head .d-sum{ font-size:12px; color: var(--cream-dim); white-space:nowrap; }
+  .day-head .d-sum .money{ color: var(--gold-light); font-weight:600; }
+
+  .month-line{
+    text-align:center; font-size:12.5px; color: var(--cream-dim);
+    margin: 12px 0 0;
+  }
+  .month-line .money{ color: var(--gold-light); font-weight:600; }
+
   .order-card{
     position:relative;
     background: var(--card);
@@ -240,15 +261,20 @@
     padding-top:10px;
   }
   .order-date{ font-size:12.5px; color: var(--gold-light); }
+  .order-money{ text-align:right; }
   .order-price{ font-family:'Fraunces', serif; font-weight:700; color: var(--gold-light); font-size:16px; }
+  .order-balance{ font-size:11.5px; color: #E08A5B; margin-top:2px; }
+  .order-balance.paid{ color: #56C271; }
 
   .order-actions{
     padding-left:8px;
     display:flex;
-    gap:14px;
+    flex-wrap:wrap;
+    gap:10px 14px;
     margin-top:10px;
   }
-  .order-actions button{
+  .order-actions button,
+  .order-actions a{
     background:none;
     border:none;
     color: var(--cream-dim);
@@ -261,6 +287,8 @@
   }
   .order-actions button.done{ color: var(--gold-light); }
   .order-actions button.del{ color: #C1440E; }
+  .order-actions button.repeat{ color: var(--gold-light); }
+  .order-actions a.wa{ color: #56C271; font-weight:600; }
 
   .empty{
     text-align:center;
@@ -351,6 +379,13 @@
   .field textarea{ min-height:70px; resize:vertical; }
   .row2{ display:flex; gap:10px; }
   .row2 .field{ flex:1; }
+
+  .hint{
+    margin:-6px 0 14px; font-size:12.5px; color: var(--cream-dim);
+    text-align:right;
+  }
+  .hint .money{ color: var(--gold-light); font-weight:600; }
+  .hint.paid{ color:#56C271; }
 
   /* Sugerencias de clientes anteriores */
   .ac{ position:relative; }
@@ -525,6 +560,8 @@
     </div>
   </div>
 
+  <div class="month-line" id="monthLine" hidden></div>
+
   <div class="toolbar">
     <input type="search" id="searchInput" placeholder="Buscar por nombre, teléfono o detalle…" aria-label="Buscar pedidos">
     <select id="filterSelect" aria-label="Filtrar pedidos">
@@ -578,10 +615,17 @@
       <input type="time" id="fTime">
     </div>
   </div>
-  <div class="field">
-    <label for="fPrice">Precio ($)</label>
-    <input type="number" id="fPrice" inputmode="decimal" step="0.01" min="0" placeholder="0.00">
+  <div class="row2">
+    <div class="field">
+      <label for="fPrice">Precio ($)</label>
+      <input type="number" id="fPrice" inputmode="decimal" step="0.01" min="0" placeholder="0.00">
+    </div>
+    <div class="field">
+      <label for="fDeposit">Adelanto ($)</label>
+      <input type="number" id="fDeposit" inputmode="decimal" step="0.01" min="0" placeholder="0.00">
+    </div>
   </div>
+  <p class="hint" id="balanceHint" hidden></p>
   <div class="sheet-actions">
     <button class="btn-cancel" id="cancelBtn">Cancelar</button>
     <button class="btn-save" id="saveBtn">Guardar pedido</button>
@@ -1177,6 +1221,29 @@ function fmtPrice(v){
   return '$' + n.toFixed(2);
 }
 
+// Devuelve null si viene vacío o no es número: así se distingue "sin precio"
+// de "precio cero", que son cosas distintas al cobrar.
+function numOrNull(v){
+  if(v === '' || v === null || v === undefined) return null;
+  const n = Number(v);
+  return isFinite(n) ? n : null;
+}
+
+// Lo que queda por cobrar: precio menos adelanto. null si no hay precio.
+function balanceOf(o){
+  const p = numOrNull(o.price);
+  if(p === null) return null;
+  const d = numOrNull(o.deposit);
+  return p - (d === null ? 0 : d);
+}
+
+function sumPrices(list){
+  return list.reduce((s, o) => {
+    const v = numOrNull(o.price);
+    return s + (v === null ? 0 : v);
+  }, 0);
+}
+
 function formatPhone(value){
   const digits = value.replace(/\D/g, '').slice(0, 10);
   const p1 = digits.slice(0, 3);
@@ -1212,8 +1279,13 @@ function render(){
     return true;
   };
 
-  const pending = orders.filter(o => !o.done && matches(o)).sort((a,b) => a.date.localeCompare(b.date));
-  const done = orders.filter(o => o.done && matches(o)).sort((a,b) => b.date.localeCompare(a.date));
+  const pending = orders.filter(o => !o.done && matches(o)).sort((a, b) => {
+    const c = String(a.date || '').localeCompare(String(b.date || ''));
+    if(c !== 0) return c;
+    // Sin hora van al final del día, no al principio.
+    return String(a.time || '99:99').localeCompare(String(b.time || '99:99'));
+  });
+  const done = orders.filter(o => o.done && matches(o)).sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
 
   document.getElementById('statTotal').textContent = orders.filter(o => !o.done).length;
   document.getElementById('statUrgent').textContent = orders.filter(isUrgent).length;
@@ -1221,11 +1293,21 @@ function render(){
     const d = daysUntil(o.date);
     return !o.done && d !== null && d >= 0 && d <= 7;
   }).length;
+  renderMonthLine();
 
   let html = '';
   if(pending.length){
-    html += '<div class="section-label">Pendientes</div>';
-    html += pending.map(o => cardHTML(o)).join('');
+    // Agrupados por día de entrega: es lo que se mira al sentarse a producir.
+    const byDate = new Map();
+    pending.forEach(o => {
+      const k = String(o.date || '');
+      if(!byDate.has(k)) byDate.set(k, []);
+      byDate.get(k).push(o);
+    });
+    byDate.forEach((list, date) => {
+      html += dayHeadHTML(date, list);
+      html += list.map(o => cardHTML(o)).join('');
+    });
   }
   if(done.length){
     html += '<div class="section-label">Entregados</div>';
@@ -1245,6 +1327,81 @@ function render(){
   container.querySelectorAll('[data-edit]').forEach(el => el.addEventListener('click', () => openEdit(el.dataset.edit)));
   container.querySelectorAll('[data-done]').forEach(el => el.addEventListener('click', () => toggleDone(el.dataset.done)));
   container.querySelectorAll('[data-del]').forEach(el => el.addEventListener('click', () => deleteOrder(el.dataset.del)));
+  container.querySelectorAll('[data-repeat]').forEach(el => el.addEventListener('click', () => repeatOrder(el.dataset.repeat)));
+}
+
+// Cabecera de un día de entrega, con cuántos pedidos hay y cuánto suman.
+function dayHeadHTML(date, list){
+  const d = daysUntil(date);
+  const fecha = fmtDate(date);
+  let name;
+  if(d === null) name = 'Sin fecha';
+  else if(d < 0) name = 'Atrasado · ' + fecha;
+  else if(d === 0) name = 'Hoy · ' + fecha;
+  else if(d === 1) name = 'Mañana · ' + fecha;
+  else name = fecha;
+  const total = sumPrices(list);
+  return '<div class="day-head"><span class="d-name">' + escapeHTML(name) + '</span>' +
+    '<span class="d-sum">' + list.length + (list.length === 1 ? ' pedido' : ' pedidos') +
+    (total > 0 ? ' · <span class="money">' + fmtPrice(total) + '</span>' : '') +
+    '</span></div>';
+}
+
+// Total de lo que se entrega este mes. Se cuenta por fecha de entrega, que es lo
+// que cuadra con el trabajo hecho, no por cuándo se anotó el pedido.
+function renderMonthLine(){
+  const el = document.getElementById('monthLine');
+  const now = new Date();
+  const ym = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+  const delMes = orders.filter(o => String(o.date || '').slice(0, 7) === ym);
+  if(delMes.length === 0){
+    el.hidden = true;
+    el.innerHTML = '';
+    return;
+  }
+  const total = sumPrices(delMes);
+  const mes = now.toLocaleDateString('es-PR', { month: 'long' });
+  el.innerHTML = 'Entregas de ' + escapeHTML(mes) + ': <strong>' + delMes.length +
+    (delMes.length === 1 ? '</strong> pedido' : '</strong> pedidos') +
+    (total > 0 ? ' · <span class="money">' + fmtPrice(total) + '</span>' : '');
+  el.hidden = false;
+}
+
+// Mensaje que se le manda al cliente. Es texto plano para WhatsApp, no HTML.
+function orderMessage(o){
+  const lines = [];
+  lines.push('¡Hola ' + o.name + '! 👋');
+  lines.push('');
+  lines.push("Te confirmo tu pedido de Rican's Sweets 🍮");
+  lines.push('');
+  const d = daysUntil(o.date);
+  let cuando = fmtDate(o.date);
+  if(d === 0) cuando = 'hoy, ' + cuando;
+  else if(d === 1) cuando = 'mañana, ' + cuando;
+  lines.push('📅 Entrega: ' + cuando + (o.time ? ' · ' + fmtTime(o.time) : ''));
+  if(o.info) lines.push('🍰 ' + o.info);
+  const price = fmtPrice(o.price);
+  if(price) lines.push('💰 Total: ' + price);
+  const dep = numOrNull(o.deposit);
+  if(dep !== null && dep > 0){
+    lines.push('💵 Adelanto: ' + fmtPrice(dep));
+    const saldo = balanceOf(o);
+    if(saldo !== null && saldo > 0) lines.push('➡️ Falta por pagar: ' + fmtPrice(saldo));
+  }
+  lines.push('');
+  lines.push("¡Gracias! — Rican's Sweets by Fany");
+  return lines.join('\n');
+}
+
+// Enlace de WhatsApp. Los teléfonos de Puerto Rico son de EE.UU., así que a los
+// 10 dígitos se les antepone el 1 del país. Sin teléfono, se abre WhatsApp sin
+// destinatario para que se elija el contacto a mano.
+function whatsappHref(o){
+  const digits = String(o.phone || '').replace(/\D/g, '');
+  const text = encodeURIComponent(orderMessage(o));
+  if(digits.length === 10) return 'https://wa.me/1' + digits + '?text=' + text;
+  if(digits.length > 10) return 'https://wa.me/' + digits + '?text=' + text;
+  return 'https://wa.me/?text=' + text;
 }
 
 function cardHTML(o){
@@ -1260,6 +1417,16 @@ function cardHTML(o){
   const price = fmtPrice(o.price);
   const dateLine = `📅 ${fmtDate(o.date)}${o.time ? ' · ' + fmtTime(o.time) : ''}`;
 
+  // Saldo pendiente: solo se muestra si hay un adelanto apuntado.
+  const dep = numOrNull(o.deposit);
+  const saldo = balanceOf(o);
+  let balanceHTML = '';
+  if(dep !== null && dep > 0 && saldo !== null){
+    balanceHTML = saldo > 0
+      ? `<div class="order-balance">Falta ${fmtPrice(saldo)}</div>`
+      : '<div class="order-balance paid">Pagado ✓</div>';
+  }
+
   return `
   <div class="order-card ${urgent ? 'urgent':''}">
     <div class="order-top">
@@ -1272,9 +1439,14 @@ function cardHTML(o){
     ${o.info ? `<div class="order-info">${escapeHTML(o.info)}</div>` : ''}
     <div class="order-meta">
       <div class="order-date">${dateLine}</div>
-      ${price ? `<div class="order-price">${price}</div>` : '<div></div>'}
+      <div class="order-money">
+        ${price ? `<div class="order-price">${price}</div>` : ''}
+        ${balanceHTML}
+      </div>
     </div>
     <div class="order-actions">
+      <a class="wa" href="${whatsappHref(o)}" target="_blank" rel="noopener">WhatsApp</a>
+      <button class="repeat" data-repeat="${o.id}">Repetir</button>
       <button data-edit="${o.id}">Editar</button>
       <button class="done" data-done="${o.id}">${o.done ? 'Reabrir' : 'Marcar entregado'}</button>
       <button class="del" data-del="${o.id}">Eliminar</button>
@@ -1303,8 +1475,10 @@ function clearForm(){
   document.getElementById('fDate').value = '';
   document.getElementById('fTime').value = '';
   document.getElementById('fPrice').value = '';
+  document.getElementById('fDeposit').value = '';
   document.getElementById('sheetTitle').textContent = 'Nuevo pedido';
   hideClientSuggest();
+  updateBalanceHint();
 }
 
 function openEdit(id){
@@ -1317,8 +1491,49 @@ function openEdit(id){
   document.getElementById('fDate').value = o.date;
   document.getElementById('fTime').value = o.time || '';
   document.getElementById('fPrice').value = o.price || '';
+  document.getElementById('fDeposit').value = o.deposit || '';
   document.getElementById('sheetTitle').textContent = 'Editar pedido';
+  updateBalanceHint();
   openSheet();
+}
+
+// Rellena el formulario con los datos de un pedido anterior para repetirlo. La
+// fecha se deja vacía a propósito: es lo único que hay que cambiar.
+function repeatOrder(id){
+  const o = orders.find(x => x.id === id);
+  if(!o) return;
+  editingId = null;            // es un pedido NUEVO, no una edición
+  document.getElementById('fName').value = o.name;
+  document.getElementById('fPhone').value = o.phone || '';
+  document.getElementById('fInfo').value = o.info || '';
+  document.getElementById('fTime').value = o.time || '';
+  document.getElementById('fPrice').value = o.price || '';
+  document.getElementById('fDeposit').value = '';   // el adelanto no se repite
+  document.getElementById('fDate').value = '';
+  document.getElementById('sheetTitle').textContent = 'Repetir pedido';
+  updateBalanceHint();
+  openSheet();
+  // Como la fecha es lo único que hay que cambiar, se enfoca ella directamente.
+  setTimeout(() => document.getElementById('fDate').focus(), 320);
+}
+
+// Muestra bajo el precio lo que queda por cobrar mientras se escribe.
+function updateBalanceHint(){
+  const el = document.getElementById('balanceHint');
+  const p = numOrNull(document.getElementById('fPrice').value);
+  const d = numOrNull(document.getElementById('fDeposit').value);
+  if(p === null || d === null || d <= 0){
+    el.hidden = true;
+    el.innerHTML = '';
+    el.classList.remove('paid');
+    return;
+  }
+  const falta = p - d;
+  el.classList.toggle('paid', falta <= 0);
+  el.innerHTML = falta > 0
+    ? 'Falta por cobrar: <span class="money">' + fmtPrice(falta) + '</span>'
+    : 'Pagado completo ✓';
+  el.hidden = false;
 }
 
 function toggleDone(id, silent){
@@ -1403,6 +1618,8 @@ function deleteOrder(id){
 document.getElementById('fPhone').addEventListener('input', (e) => {
   e.target.value = formatPhone(e.target.value);
 });
+document.getElementById('fPrice').addEventListener('input', updateBalanceHint);
+document.getElementById('fDeposit').addEventListener('input', updateBalanceHint);
 
 // --- Sugerencias de clientes anteriores -------------------------------------
 // Ahorra teclear el nombre y, sobre todo, el teléfono: un número mal escrito es
@@ -1521,6 +1738,7 @@ function doSave(){
     date,
     time: document.getElementById('fTime').value,
     price: document.getElementById('fPrice').value.trim(),
+    deposit: document.getElementById('fDeposit').value.trim(),
   };
 
   let newOrder;
@@ -1600,16 +1818,21 @@ function csvCell(v){
 
 function exportCSV(){
   if(orders.length === 0){ toast('No hay pedidos para exportar todavía.'); return; }
-  const header = ['Nombre','Teléfono','Detalles','Fecha','Hora','Precio','Estado'];
-  const rows = orders.map(o => [
-    o.name,
-    o.phone || '',
-    (o.info || '').replace(/\n/g, ' '),
-    o.date,
-    o.time || '',
-    o.price || '',
-    o.done ? 'Entregado' : 'Pendiente'
-  ]);
+  const header = ['Nombre','Teléfono','Detalles','Fecha','Hora','Precio','Adelanto','Saldo','Estado'];
+  const rows = orders.map(o => {
+    const saldo = balanceOf(o);
+    return [
+      o.name,
+      o.phone || '',
+      (o.info || '').replace(/\n/g, ' '),
+      o.date,
+      o.time || '',
+      o.price || '',
+      o.deposit || '',
+      saldo === null ? '' : saldo.toFixed(2),
+      o.done ? 'Entregado' : 'Pendiente'
+    ];
+  });
   const csv = [header, ...rows].map(r => r.map(csvCell).join(',')).join('\r\n');
   downloadFile('ricans-sweets-pedidos-' + dateStamp() + '.csv', '\uFEFF' + csv, 'text/csv;charset=utf-8');
   toast('CSV descargado ✓');
@@ -1642,6 +1865,7 @@ function importJSON(file){
           info: item.info || '',
           time: item.time || '',
           price: item.price != null ? String(item.price) : '',
+          deposit: item.deposit != null ? String(item.deposit) : '',
           gcalEventId: item.gcalEventId || null,
           updatedAt: importedAt
         };

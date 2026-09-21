@@ -152,6 +152,113 @@ async function run(check) {
   app2.run('clearForm()');
   check('cerrar/limpiar la hoja esconde las sugerencias',
     app2.el('clientSuggest').hidden === true);
+
+  // ------------------------------------------------- #1 compartir por WhatsApp ---
+  console.log('\n-- #1 compartir por WhatsApp --');
+  const app3 = await loadApp({
+    [ORDERS_KEY]: JSON.stringify([
+      { id: 'w1', name: 'María Rivera', date: todayIso(1), time: '15:00', done: false,
+        phone: '561-524-5454', info: 'Flan de queso grande', price: '45', deposit: '20' }
+    ])
+  });
+  const href = app3.eval('whatsappHref(orders[0])');
+  check('el enlace abre WhatsApp con el número de Puerto Rico (+1)',
+    href.indexOf('https://wa.me/15615245454?text=') === 0, href.slice(0, 60));
+  const msg = decodeURIComponent(href.split('?text=')[1]);
+  check('el mensaje saluda al cliente', msg.indexOf('María Rivera') !== -1);
+  check('  dice cuándo es la entrega', msg.indexOf('mañana') !== -1, msg);
+  check('  lleva el detalle del pedido', msg.indexOf('Flan de queso grande') !== -1);
+  check('  el total', msg.indexOf('$45.00') !== -1);
+  check('  el adelanto y lo que falta por pagar',
+    msg.indexOf('$20.00') !== -1 && msg.indexOf('$25.00') !== -1, msg);
+  check('la tarjeta trae el botón de WhatsApp',
+    app3.el('listContainer').innerHTML.indexOf('class="wa"') !== -1);
+  check('sin teléfono, abre WhatsApp para elegir el contacto',
+    app3.eval('whatsappHref({name:"X", date:"2026-01-01"})').indexOf('https://wa.me/?text=') === 0);
+
+  // ------------------------------------------------- #3 adelanto y saldo ---
+  console.log('\n-- #3 adelanto y saldo pendiente --');
+  check('calcúla lo que falta', app3.eval('balanceOf({price:"45", deposit:"20"})') === 25);
+  check('sin adelanto, falta el total', app3.eval('balanceOf({price:"45"})') === 45);
+  check('sin precio no hay saldo', app3.eval('balanceOf({deposit:"20"})') === null);
+  check('la tarjeta muestra lo que falta',
+    app3.el('listContainer').innerHTML.indexOf('Falta $25.00') !== -1);
+  app3.run('orders[0].deposit = "45"; render();');
+  check('  y dice "Pagado" cuando el adelanto cubre el total',
+    app3.el('listContainer').innerHTML.indexOf('Pagado') !== -1);
+  app3.run('orders[0].deposit = ""; render();');
+  check('  y no muestra nada si no hay adelanto apuntado',
+    app3.el('listContainer').innerHTML.indexOf('Falta ') === -1);
+
+  app3.el('fPrice').value = '100';
+  app3.el('fDeposit').value = '40';
+  app3.run('updateBalanceHint()');
+  check('el aviso del formulario calcula mientras escribes',
+    app3.el('balanceHint').innerHTML.indexOf('$60.00') !== -1 && app3.el('balanceHint').hidden === false,
+    app3.el('balanceHint').innerHTML);
+  app3.el('fDeposit').value = '100';
+  app3.run('updateBalanceHint()');
+  check('  y avisa cuando está pagado completo',
+    app3.el('balanceHint').innerHTML.indexOf('Pagado') !== -1);
+  app3.el('fDeposit').value = '';
+  app3.run('updateBalanceHint()');
+  check('  y se oculta si no hay adelanto', app3.el('balanceHint').hidden === true);
+
+  // ------------------------------------------------------ #2 repetir pedido ---
+  console.log('\n-- #2 repetir un pedido --');
+  app3.run('orders = ' + JSON.stringify([
+    { id: 'r1', name: 'Luis Colón', date: todayIso(-3), time: '10:00', done: true,
+      phone: '787-111-2222', info: 'Tres leches mini x6', price: '30', deposit: '15' }
+  ]) + '; render();');
+  app3.run('repeatOrder("r1")');
+  check('rellena el nombre', app3.el('fName').value === 'Luis Colón', app3.el('fName').value);
+  check('  el teléfono', app3.el('fPhone').value === '787-111-2222', app3.el('fPhone').value);
+  check('  los detalles', app3.el('fInfo').value === 'Tres leches mini x6');
+  check('  la hora', app3.el('fTime').value === '10:00');
+  check('  el precio', app3.el('fPrice').value === '30');
+  check('  la fecha queda VACÍA, que es lo único que hay que cambiar',
+    app3.el('fDate').value === '', app3.el('fDate').value);
+  check('  el adelanto NO se copia', app3.el('fDeposit').value === '', app3.el('fDeposit').value);
+  check('  es un pedido nuevo, no una edición del anterior',
+    app3.eval('editingId') === null, String(app3.eval('editingId')));
+  check('  y el título de la hoja lo dice', app3.el('sheetTitle').textContent === 'Repetir pedido');
+  check('la tarjeta trae el botón Repetir',
+    app3.el('listContainer').innerHTML.indexOf('data-repeat') !== -1);
+
+  // ------------------------------------------- #4 agrupado por día de entrega ---
+  console.log('\n-- #4 agrupado por día de entrega --');
+  const seed4 = [
+    { id: 'd1', name: 'Ana', date: todayIso(0), time: '09:00', done: false, price: '20' },
+    { id: 'd2', name: 'Bea', date: todayIso(1), time: '11:00', done: false, price: '30' },
+    { id: 'd3', name: 'Car', date: todayIso(1), time: '08:00', done: false, price: '10' },
+    { id: 'd4', name: 'Dan', date: todayIso(40), done: false, price: '5' }
+  ];
+  const app4 = await loadApp({ [ORDERS_KEY]: JSON.stringify(seed4) });
+  const list4 = app4.el('listContainer').innerHTML;
+  const cabeceras = (list4.match(/class="day-head"/g) || []).length;
+  check('hay una cabecera por cada día de entrega', cabeceras === 3, 'hay ' + cabeceras);
+  check('el primer grupo es HOY', list4.indexOf('Hoy · ') !== -1);
+  check('el segundo es MAÑANA', list4.indexOf('Mañana · ') !== -1);
+  check('dentro del día se ordena por hora (08:00 antes de 11:00)',
+    list4.indexOf('Car') < list4.indexOf('Bea'), 'orden incorrecto');
+  check('la cabecera del día suma el dinero de ese día',
+    list4.indexOf('$40.00') !== -1, 'no aparece $40.00 (30+10)');
+  check('ya no aparece la etiqueta genérica "Pendientes"',
+    list4.indexOf('>Pendientes<') === -1);
+
+  // ------------------------------------------------------ #5 total del mes ---
+  console.log('\n-- #5 total de entregas del mes --');
+  const ym = todayIso(0).slice(0, 7);
+  const delMes = seed4.filter((o) => o.date.slice(0, 7) === ym);
+  const totalMes = delMes.reduce((s, o) => s + Number(o.price), 0);
+  const mesLine = app4.el('monthLine');
+  check('se muestra la línea del mes', mesLine.hidden === false);
+  check('  con el total de las entregas de este mes',
+    mesLine.innerHTML.indexOf('$' + totalMes.toFixed(2)) !== -1,
+    mesLine.innerHTML + ' (esperado $' + totalMes.toFixed(2) + ')');
+  check('  y con el número de pedidos de este mes',
+    mesLine.innerHTML.indexOf('<strong>' + delMes.length + '</strong>') !== -1,
+    mesLine.innerHTML);
 }
 
 module.exports = { name: 'La app (arranque, fusión, deshacer, sugerencias)', run };
