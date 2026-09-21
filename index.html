@@ -180,6 +180,13 @@
   }
   .month-line .money{ color: var(--gold-light); font-weight:600; }
 
+  /* Enlace legal, discreto, al final de la página */
+  .legal{
+    text-align:center; margin: 26px 0 0;
+    font-size:12px;
+  }
+  .legal a{ color: var(--cream-dim); text-decoration:none; border-bottom:1px solid var(--line); }
+
   .order-card{
     position:relative;
     background: var(--card);
@@ -499,7 +506,7 @@
     body{ background:#fff !important; color:#000; padding:0; }
     .fab, .toolbar, .data-actions, .gcal-bar, .notice, .summary,
     .sheet, .sheet-backdrop, .confirm-modal, .toast, .order-actions,
-    header .logo, header .eyebrow, header .divider{ display:none !important; }
+    .legal, header .logo, header .eyebrow, header .divider{ display:none !important; }
     header{ padding:8px 0; }
     header h1{ font-size:22px; background:none; color:#000 !important; -webkit-text-fill-color:#000 !important; }
     main{ max-width:none; padding:0; }
@@ -582,6 +589,8 @@
   </div>
 
   <div id="listContainer"></div>
+
+  <p class="legal"><a href="privacidad.html">Política de privacidad</a></p>
 </main>
 
 <button class="fab" id="openAdd" aria-label="Añadir pedido">+</button>
