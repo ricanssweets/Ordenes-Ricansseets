@@ -180,6 +180,24 @@
   }
   .month-line .money{ color: var(--gold-light); font-weight:600; }
 
+  /* Lo que falta por cobrar: va en naranja porque es dinero pendiente */
+  .debt-line{
+    text-align:center; font-size:12.5px; color: #E08A5B;
+    margin: 6px 0 0;
+  }
+  .debt-line .money{ font-weight:700; }
+
+  /* Aviso de que toca hacer respaldo */
+  .backup-line{
+    text-align:center; font-size:12px; color: var(--cream-dim);
+    margin: 0 4px 12px;
+    border:1px solid var(--line); border-radius:10px; padding:8px 10px;
+  }
+  .backup-line .link{
+    background:none;border:none;color:var(--gold-light);text-decoration:underline;
+    cursor:pointer;font-size:12px;padding:0;font-family:inherit;
+  }
+
   /* Enlace legal, discreto, al final de la página */
   .legal{
     text-align:center; margin: 26px 0 0;
@@ -295,7 +313,9 @@
   .order-actions button.done{ color: var(--gold-light); }
   .order-actions button.del{ color: #C1440E; }
   .order-actions button.repeat{ color: var(--gold-light); }
+  .order-actions button.paid{ color: #56C271; }
   .order-actions a.wa{ color: #56C271; font-weight:600; }
+  .order-actions a.remind{ color: var(--gold-light); }
 
   .empty{
     text-align:center;
@@ -567,6 +587,7 @@
   </div>
 
   <div class="month-line" id="monthLine" hidden></div>
+  <div class="debt-line" id="debtLine" hidden></div>
 
   <div class="toolbar">
     <input type="search" id="searchInput" placeholder="Buscar por nombre, teléfono o detalle…" aria-label="Buscar pedidos">
@@ -577,6 +598,8 @@
       <option value="urgent">Urgentes</option>
     </select>
   </div>
+
+  <p class="backup-line" id="backupLine" hidden></p>
 
   <div class="data-actions">
     <button id="exportBtn" title="Descargar copia de seguridad completa">Respaldo</button>
@@ -706,6 +729,7 @@ const GCAL_TOKEN_KEY = 'ricans_sweets_gcal_token';
 const APP_KEY_STORAGE = 'ricans_sweets_app_key';
 const SYNCED_IDS_KEY = 'ricans_sweets_synced_ids';
 const PENDING_DELETES_KEY = 'ricans_sweets_pending_deletes';
+const LAST_BACKUP_KEY = 'ricans_sweets_last_backup';
 let orders = [];
 let editingId = null;
 
@@ -1278,6 +1302,22 @@ function sumPrices(list){
   }, 0);
 }
 
+// Pedidos pendientes con saldo por cobrar. Solo cuentan los que TIENEN un
+// adelanto apuntado: en los que no lo hay no se sabe si el cliente ya pagó o no,
+// así que darlos por impagados daría una cifra falsa.
+function conSaldoPendiente(list){
+  return list.filter(o => {
+    if(o.done) return false;
+    const dep = numOrNull(o.deposit);
+    if(dep === null || dep <= 0) return false;
+    const saldo = balanceOf(o);
+    return saldo !== null && saldo > 0;
+  });
+}
+function pendingMoney(list){
+  return conSaldoPendiente(list).reduce((s, o) => s + balanceOf(o), 0);
+}
+
 function formatPhone(value){
   const digits = value.replace(/\D/g, '').slice(0, 10);
   const p1 = digits.slice(0, 3);
@@ -1328,6 +1368,8 @@ function render(){
     return !o.done && d !== null && d >= 0 && d <= 7;
   }).length;
   renderMonthLine();
+  renderDebtLine();
+  renderBackupNotice();
 
   let html = '';
   if(pending.length){
@@ -1362,6 +1404,7 @@ function render(){
   container.querySelectorAll('[data-done]').forEach(el => el.addEventListener('click', () => toggleDone(el.dataset.done)));
   container.querySelectorAll('[data-del]').forEach(el => el.addEventListener('click', () => deleteOrder(el.dataset.del)));
   container.querySelectorAll('[data-repeat]').forEach(el => el.addEventListener('click', () => repeatOrder(el.dataset.repeat)));
+  container.querySelectorAll('[data-paid]').forEach(el => el.addEventListener('click', () => markPaid(el.dataset.paid)));
 }
 
 // Cabecera de un día de entrega, con cuántos pedidos hay y cuánto suman.
@@ -1375,9 +1418,11 @@ function dayHeadHTML(date, list){
   else if(d === 1) name = 'Mañana · ' + fecha;
   else name = fecha;
   const total = sumPrices(list);
+  const porCobrar = pendingMoney(list);
   return '<div class="day-head"><span class="d-name">' + escapeHTML(name) + '</span>' +
     '<span class="d-sum">' + list.length + (list.length === 1 ? ' pedido' : ' pedidos') +
     (total > 0 ? ' · <span class="money">' + fmtPrice(total) + '</span>' : '') +
+    (porCobrar > 0 ? ' · por cobrar <span class="money">' + fmtPrice(porCobrar) + '</span>' : '') +
     '</span></div>';
 }
 
@@ -1401,7 +1446,22 @@ function renderMonthLine(){
   el.hidden = false;
 }
 
-// Mensaje que se le manda al cliente. Es texto plano para WhatsApp, no HTML.
+// Lo que falta por cobrar en total. Solo aparece si hay algo pendiente.
+function renderDebtLine(){
+  const el = document.getElementById('debtLine');
+  const pendientes = conSaldoPendiente(orders);
+  const total = pendingMoney(orders);
+  if(total <= 0){
+    el.hidden = true;
+    el.innerHTML = '';
+    return;
+  }
+  el.innerHTML = 'Falta por cobrar: <span class="money">' + fmtPrice(total) + '</span> en ' +
+    pendientes.length + (pendientes.length === 1 ? ' pedido' : ' pedidos');
+  el.hidden = false;
+}
+
+// --- Mensaje que se le manda al cliente. Es texto plano para WhatsApp, no HTML.
 //
 // OJO CON LOS EMOJIS DE CALENDARIO: el 📅 no es un dibujo genérico — la fuente lo
 // pinta con una fecha impresa dentro, así que puesto al lado de la fecha real el
@@ -1435,12 +1495,35 @@ function orderMessage(o){
 // Enlace de WhatsApp. Los teléfonos de Puerto Rico son de EE.UU., así que a los
 // 10 dígitos se les antepone el 1 del país. Sin teléfono, se abre WhatsApp sin
 // destinatario para que se elija el contacto a mano.
-function whatsappHref(o){
+// Si se le pasa un texto, se usa ese en vez del mensaje de confirmación.
+function whatsappHref(o, texto){
   const digits = String(o.phone || '').replace(/\D/g, '');
-  const text = encodeURIComponent(orderMessage(o));
+  const text = encodeURIComponent(texto || orderMessage(o));
   if(digits.length === 10) return 'https://wa.me/1' + digits + '?text=' + text;
   if(digits.length > 10) return 'https://wa.me/' + digits + '?text=' + text;
   return 'https://wa.me/?text=' + text;
+}
+
+// Recordatorio para el cliente, para los pedidos que tocan hoy o mañana. Sirve
+// sobre todo para que no se le olvide pasar a recogerlo.
+function reminderMessage(o){
+  const d = daysUntil(o.date);
+  const cuando = d === 0 ? 'hoy' : 'mañana';
+  const lines = [];
+  lines.push('¡Hola ' + o.name + '! 👋');
+  lines.push('');
+  lines.push('Te recuerdo que ' + cuando + ' te toca tu pedido de Rican\'s Sweets 🍮');
+  lines.push('');
+  lines.push('*Entrega:* ' + fmtDate(o.date) + (o.time ? ' · ' + fmtTime(o.time) : ''));
+  if(o.info) lines.push('*Pedido:* ' + o.info);
+  const saldo = balanceOf(o);
+  const dep = numOrNull(o.deposit);
+  if(dep !== null && dep > 0 && saldo !== null && saldo > 0){
+    lines.push('*Falta por pagar:* ' + fmtPrice(saldo));
+  }
+  lines.push('');
+  lines.push("¡Gracias! — Rican's Sweets by Fany");
+  return lines.join('\n');
 }
 
 function cardHTML(o){
@@ -1468,6 +1551,12 @@ function cardHTML(o){
       : '<div class="order-balance paid">Pagado ✓</div>';
   }
 
+  // Acciones que solo aparecen cuando tienen sentido, para no llenar la tarjeta
+  // de botones: recordar al cliente solo si toca hoy o mañana, y cobrar solo si
+  // queda dinero pendiente.
+  const puedeRecordar = !o.done && (dleft === 0 || dleft === 1);
+  const puedeCobrar = !o.done && dep !== null && dep > 0 && saldo !== null && saldo > 0;
+
   return `
   <div class="order-card ${urgent ? 'urgent':''}">
     <div class="order-top">
@@ -1487,6 +1576,8 @@ function cardHTML(o){
     </div>
     <div class="order-actions">
       <a class="wa" href="${whatsappHref(o)}" target="_blank" rel="noopener">WhatsApp</a>
+      ${puedeRecordar ? `<a class="remind" href="${whatsappHref(o, reminderMessage(o))}" target="_blank" rel="noopener">Recordar</a>` : ''}
+      ${puedeCobrar ? `<button class="paid" data-paid="${o.id}">Cobrado</button>` : ''}
       <button class="repeat" data-repeat="${o.id}">Repetir</button>
       <button data-edit="${o.id}">Editar</button>
       <button class="done" data-done="${o.id}">${o.done ? 'Reabrir' : 'Marcar entregado'}</button>
@@ -1556,6 +1647,33 @@ function repeatOrder(id){
   openSheet();
   // Como la fecha es lo único que hay que cambiar, se enfoca ella directamente.
   setTimeout(() => document.getElementById('fDate').focus(), 320);
+}
+
+// Marca el pedido como cobrado del todo: pone el adelanto igual al precio. Se
+// puede deshacer, que un toque por error no debería dar nada por pagado.
+function markPaid(id){
+  const o = orders.find(x => x.id === id);
+  if(!o) return;
+  const precio = numOrNull(o.price);
+  if(precio === null){ toast('Ese pedido no tiene precio.'); return; }
+  const antes = o.deposit || '';
+  o.deposit = String(precio);
+  o.updatedAt = Date.now();
+  saveOrders();
+  render();
+  toast('Cobrado completo ✓', {
+    action: 'Deshacer',
+    duration: 8000,
+    onAction: () => {
+      const cur = orders.find(x => x.id === id);
+      if(!cur) return;
+      cur.deposit = antes;
+      cur.updatedAt = Date.now();
+      saveOrders();
+      render();
+      toast('Deshecho');
+    }
+  });
 }
 
 // Muestra bajo el precio lo que queda por cobrar mientras se escribe.
@@ -1849,7 +1967,37 @@ function exportJSON(){
   if(orders.length === 0){ toast('No hay pedidos que respaldar todavía.'); return; }
   const payload = { app: 'ricans-sweets', version: 1, exportedAt: new Date().toISOString(), orders };
   downloadFile('ricans-sweets-respaldo-' + dateStamp() + '.json', JSON.stringify(payload, null, 2), 'application/json');
+  localStorage.setItem(LAST_BACKUP_KEY, String(Date.now()));
+  renderBackupNotice();
   toast('Respaldo descargado ✓');
+}
+
+// Aviso de que toca hacer copia de seguridad. El respaldo es manual, así que sin
+// un recordatorio es fácil estar meses sin ninguno.
+const DIAS_AVISO_RESPALDO = 30;
+function renderBackupNotice(){
+  const el = document.getElementById('backupLine');
+  if(orders.length < 5){
+    el.hidden = true;
+    el.innerHTML = '';
+    return;
+  }
+  const ultimo = Number(localStorage.getItem(LAST_BACKUP_KEY) || 0);
+  let aviso = '';
+  if(!ultimo){
+    aviso = 'Todavía no has hecho ninguna copia de seguridad de tus pedidos.';
+  } else {
+    const dias = Math.floor((Date.now() - ultimo) / 86400000);
+    if(dias < DIAS_AVISO_RESPALDO){
+      el.hidden = true;
+      el.innerHTML = '';
+      return;
+    }
+    aviso = 'Hace ' + dias + ' días que no haces copia de seguridad.';
+  }
+  el.innerHTML = escapeHTML(aviso) + ' <button class="link" id="backupNow">Hacer respaldo</button>';
+  el.hidden = false;
+  document.getElementById('backupNow').addEventListener('click', exportJSON);
 }
 
 function csvCell(v){

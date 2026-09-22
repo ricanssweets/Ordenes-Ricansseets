@@ -270,6 +270,92 @@ async function run(check) {
   check('  y con el número de pedidos de este mes',
     mesLine.innerHTML.indexOf('<strong>' + delMes.length + '</strong>') !== -1,
     mesLine.innerHTML);
+
+  // --------------------------------------------- #1 cuánto hay por cobrar ---
+  console.log('\n-- #1 lo que falta por cobrar --');
+  const app5 = await loadApp({
+    [ORDERS_KEY]: JSON.stringify([
+      { id: 'p1', name: 'Ana', date: todayIso(1), done: false, price: '45', deposit: '20' },
+      { id: 'p2', name: 'Bea', date: todayIso(1), done: false, price: '30', deposit: '30' },
+      { id: 'p3', name: 'Car', date: todayIso(2), done: false, price: '50' },
+      { id: 'p4', name: 'Dan', date: todayIso(2), done: true, price: '25', deposit: '5' }
+    ])
+  });
+  check('suma solo los saldos de pedidos con adelanto apuntado',
+    app5.eval('pendingMoney(orders)') === 25, String(app5.eval('pendingMoney(orders)')));
+  check('no cuenta los ya entregados ni los que no tienen adelanto',
+    app5.eval('conSaldoPendiente(orders).length') === 1, String(app5.eval('conSaldoPendiente(orders).length')));
+  check('la línea de deuda aparece con el total y cuántos pedidos son',
+    app5.el('debtLine').hidden === false &&
+    app5.el('debtLine').innerHTML.indexOf('$25.00') !== -1 &&
+    app5.el('debtLine').innerHTML.indexOf('en 1 pedido') !== -1,
+    app5.el('debtLine').innerHTML);
+  check('la cabecera del día dice lo que hay que cobrar ese día',
+    app5.el('listContainer').innerHTML.indexOf('por cobrar') !== -1);
+
+  // ------------------------------------------------ #2 cobrar de un toque ---
+  console.log('\n-- #2 un toque para cobrar --');
+  const html5 = app5.el('listContainer').innerHTML;
+  check('el botón Cobrado sale solo donde queda saldo',
+    (html5.match(/data-paid/g) || []).length === 1, String((html5.match(/data-paid/g) || []).length));
+  app5.run('markPaid("p1")');
+  check('marca el pedido como pagado del todo',
+    app5.eval('orders.find(function(o){return o.id==="p1";}).deposit') === '45',
+    app5.eval('orders.find(function(o){return o.id==="p1";}).deposit'));
+  check('  la deuda pasa a cero', app5.eval('pendingMoney(orders)') === 0);
+  check('  y el botón desaparece de la tarjeta',
+    app5.el('listContainer').innerHTML.indexOf('data-paid') === -1);
+  const undo5 = app5.el('toast').children.filter((c) => c.textContent === 'Deshacer').pop();
+  check('  y se puede deshacer', !!undo5);
+  if (undo5) {
+    undo5.dispatch('click');
+    check('    deshacer devuelve el adelanto que había antes',
+      app5.eval('orders.find(function(o){return o.id==="p1";}).deposit') === '20',
+      app5.eval('orders.find(function(o){return o.id==="p1";}).deposit'));
+  }
+
+  // --------------------------------------------- #3 recordar al cliente ---
+  console.log('\n-- #3 recordar al cliente por WhatsApp --');
+  const app6 = await loadApp({
+    [ORDERS_KEY]: JSON.stringify([
+      { id: 'r1', name: 'Ana', date: todayIso(1), time: '15:00', done: false,
+        price: '45', deposit: '20', phone: '561-524-5454', info: 'flan grande' },
+      { id: 'r2', name: 'Bea', date: todayIso(5), done: false, price: '30', phone: '787-111-2222' }
+    ])
+  });
+  const html6 = app6.el('listContainer').innerHTML;
+  check('solo sale Recordar en los pedidos de hoy o mañana',
+    (html6.match(/class="remind"/g) || []).length === 1, String((html6.match(/class="remind"/g) || []).length));
+  const rmsg = decodeURIComponent(app6.eval('whatsappHref(orders[0], reminderMessage(orders[0]))').split('?text=')[1]);
+  check('el recordatorio dice "mañana te toca"', rmsg.indexOf('mañana te toca') !== -1, rmsg);
+  check('  recuerda la hora de entrega', rmsg.indexOf('3:00') !== -1, rmsg);
+  check('  y lo que falta por pagar, para que lo traiga',
+    rmsg.indexOf('$25.00') !== -1, rmsg);
+  check('para un pedido de hoy dice "hoy te toca"',
+    app6.eval('reminderMessage({name:"X", date:"' + todayIso(0) + '"})').indexOf('hoy te toca') !== -1,
+    app6.eval('reminderMessage({name:"X", date:"' + todayIso(0) + '"})'));
+
+  // ------------------------------------------- #4 aviso de hacer respaldo ---
+  console.log('\n-- #4 aviso de copia de seguridad --');
+  const cinco = [];
+  for (let i = 0; i < 5; i++) cinco.push({ id: 'b' + i, name: 'C' + i, date: todayIso(i), done: false, price: '10' });
+  const app7 = await loadApp({ [ORDERS_KEY]: JSON.stringify(cinco) });
+  check('avisa si nunca se ha hecho copia y ya hay pedidos',
+    app7.el('backupLine').hidden === false);
+  check('  y ofrece hacerla desde el propio aviso',
+    app7.el('backupLine').innerHTML.indexOf('backupNow') !== -1, app7.el('backupLine').innerHTML);
+  app7.localStorage.setItem('ricans_sweets_last_backup', String(Date.now()));
+  app7.run('render()');
+  check('el aviso desaparece al hacer el respaldo', app7.el('backupLine').hidden === true);
+  app7.localStorage.setItem('ricans_sweets_last_backup', String(Date.now() - 40 * 86400000));
+  app7.run('render()');
+  check('  y vuelve a salir pasados los 30 días',
+    app7.el('backupLine').hidden === false && app7.el('backupLine').innerHTML.indexOf('días') !== -1,
+    app7.el('backupLine').innerHTML);
+  const app8 = await loadApp({
+    [ORDERS_KEY]: JSON.stringify([{ id: 'x', name: 'X', date: todayIso(0), done: false }])
+  });
+  check('con pocos pedidos no da la lata con el aviso', app8.el('backupLine').hidden === true);
 }
 
 module.exports = { name: 'La app (arranque, fusión, deshacer, sugerencias)', run };
