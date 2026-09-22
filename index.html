@@ -1265,6 +1265,37 @@ function fmtDate(dateStr){
   return d.toLocaleDateString('es-PR', { weekday:'short', day:'numeric', month:'short' });
 }
 
+// Fecha escrita entera, para los mensajes que van al cliente: así no hay que
+// descifrar abreviaturas. En la app se sigue usando la corta.
+function fmtDateLong(dateStr){
+  const d = new Date(dateStr + 'T00:00:00');
+  if(isNaN(d.getTime())) return 'sin fecha';
+  return d.toLocaleDateString('es-PR', { weekday:'long', day:'numeric', month:'long' });
+}
+
+// Reloj de emoji que CONCUERDA con la hora del pedido.
+//
+// OJO: esto no es un adorno cualquiera. Los emojis de reloj llevan una hora
+// dibujada dentro, igual que el de calendario lleva una fecha. Uno fijo al lado
+// de la hora real sería el mismo error que ya cometimos con el calendario, así
+// que se elige el que marca esa hora: a las 3 se pone el de las 3. De la media
+// hora en adelante se usa el de y media.
+const RELOJES = ['🕛', '🕐', '🕑', '🕒', '🕓', '🕔', '🕕', '🕖', '🕗', '🕘', '🕙', '🕚'];
+const RELOJES_MEDIA = ['🕧', '🕜', '🕝', '🕞', '🕟', '🕠', '🕡', '🕢', '🕣', '🕤', '🕥', '🕦'];
+function clockEmoji(t){
+  const m = /^(\d{1,2}):(\d{2})$/.exec(String(t || ''));
+  if(!m) return '';
+  const h = Number(m[1]) % 12;
+  return Number(m[2]) >= 30 ? RELOJES_MEDIA[h] : RELOJES[h];
+}
+
+// " · 🕒 3:00 p. m." o nada si el pedido no tiene hora.
+function timeWithClock(t){
+  if(!t) return '';
+  const icono = clockEmoji(t);
+  return ' · ' + (icono ? icono + ' ' : '') + fmtTime(t);
+}
+
 function fmtTime(t){
   if(!t) return '';
   const [h, m] = t.split(':').map(Number);
@@ -1474,10 +1505,10 @@ function orderMessage(o){
   lines.push("Te confirmo tu pedido de Rican's Sweets 🍮");
   lines.push('');
   const d = daysUntil(o.date);
-  let cuando = fmtDate(o.date);
+  let cuando = fmtDateLong(o.date);
   if(d === 0) cuando = 'hoy, ' + cuando;
   else if(d === 1) cuando = 'mañana, ' + cuando;
-  lines.push('*Entrega:* ' + cuando + (o.time ? ' · ' + fmtTime(o.time) : ''));
+  lines.push('*Entrega:* ' + cuando + timeWithClock(o.time));
   if(o.info) lines.push('*Pedido:* ' + o.info);
   const price = fmtPrice(o.price);
   if(price) lines.push('*Total:* ' + price);
@@ -1514,7 +1545,7 @@ function reminderMessage(o){
   lines.push('');
   lines.push('Te recuerdo que ' + cuando + ' te toca tu pedido de Rican\'s Sweets 🍮');
   lines.push('');
-  lines.push('*Entrega:* ' + fmtDate(o.date) + (o.time ? ' · ' + fmtTime(o.time) : ''));
+  lines.push('*Entrega:* ' + fmtDateLong(o.date) + timeWithClock(o.time));
   if(o.info) lines.push('*Pedido:* ' + o.info);
   const saldo = balanceOf(o);
   const dep = numOrNull(o.deposit);

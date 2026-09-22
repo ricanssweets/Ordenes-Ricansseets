@@ -182,6 +182,28 @@ async function run(check) {
     msg.indexOf('*Adelanto:*') !== -1 && msg.indexOf('*Falta por pagar:*') !== -1, msg);
   check('la tarjeta de la app tampoco lleva emoji de calendario junto a la fecha',
     app3.el('listContainer').innerHTML.indexOf('📅') === -1, 'sigue puesto');
+
+  // Fecha escrita entera y reloj que concuerda con la hora.
+  const fechaLarga = new Date(todayIso(1) + 'T00:00:00')
+    .toLocaleDateString('es-PR', { weekday: 'long', day: 'numeric', month: 'long' });
+  const fechaCorta = new Date(todayIso(1) + 'T00:00:00')
+    .toLocaleDateString('es-PR', { weekday: 'short', day: 'numeric', month: 'short' });
+  check('la fecha va escrita entera, sin abreviar',
+    msg.indexOf(fechaLarga) !== -1, fechaLarga + '  |  ' + lineaEntrega);
+  check('  y ya no aparece la abreviatura', msg.indexOf(fechaCorta) === -1, fechaCorta);
+  // Los emojis de reloj llevan una hora dibujada, así que tiene que ser la suya.
+  check('la hora lleva delante un reloj que marca ESA hora (15:00 -> las 3)',
+    lineaEntrega.indexOf('🕒') !== -1, lineaEntrega);
+  check('  a y media se usa el reloj de y media',
+    app3.eval('clockEmoji("15:30")') === '🕞', app3.eval('clockEmoji("15:30")'));
+  check('  las 00 y las 12 dan el de las 12',
+    app3.eval('clockEmoji("00:15")') === '🕛' && app3.eval('clockEmoji("12:00")') === '🕛',
+    app3.eval('clockEmoji("00:15")') + ' / ' + app3.eval('clockEmoji("12:00")'));
+  check('  las 9 de la mañana, el de las 9',
+    app3.eval('clockEmoji("09:00")') === '🕘', app3.eval('clockEmoji("09:00")'));
+  check('  sin hora no se pone reloj ni punto suelto',
+    app3.eval('timeWithClock("")') === '' && app3.eval('clockEmoji("basura")') === '' &&
+    app3.eval('clockEmoji(null)') === '');
   check('la tarjeta trae el botón de WhatsApp',
     app3.el('listContainer').innerHTML.indexOf('class="wa"') !== -1);
   check('sin teléfono, abre WhatsApp para elegir el contacto',
