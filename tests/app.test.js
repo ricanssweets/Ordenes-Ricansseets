@@ -171,6 +171,17 @@ async function run(check) {
   check('  el total', msg.indexOf('$45.00') !== -1);
   check('  el adelanto y lo que falta por pagar',
     msg.indexOf('$20.00') !== -1 && msg.indexOf('$25.00') !== -1, msg);
+  // El emoji de calendario lo dibuja la fuente con una fecha impresa dentro, así
+  // que al lado de la fecha real el cliente puede leer la del icono. Por eso las
+  // etiquetas van en negrita de WhatsApp (*texto*).
+  const lineaEntrega = msg.split('\n').find((l) => l.indexOf('Entrega') !== -1) || '';
+  check('la fecha va etiquetada en negrita y SIN emoji de calendario',
+    lineaEntrega.indexOf('*Entrega:*') !== -1 && msg.indexOf('📅') === -1, lineaEntrega);
+  check('  el total también va con etiqueta', msg.indexOf('*Total:*') !== -1, msg);
+  check('  y el adelanto y el saldo igual',
+    msg.indexOf('*Adelanto:*') !== -1 && msg.indexOf('*Falta por pagar:*') !== -1, msg);
+  check('la tarjeta de la app tampoco lleva emoji de calendario junto a la fecha',
+    app3.el('listContainer').innerHTML.indexOf('📅') === -1, 'sigue puesto');
   check('la tarjeta trae el botón de WhatsApp',
     app3.el('listContainer').innerHTML.indexOf('class="wa"') !== -1);
   check('sin teléfono, abre WhatsApp para elegir el contacto',

@@ -1402,6 +1402,11 @@ function renderMonthLine(){
 }
 
 // Mensaje que se le manda al cliente. Es texto plano para WhatsApp, no HTML.
+//
+// OJO CON LOS EMOJIS DE CALENDARIO: el 📅 no es un dibujo genérico — la fuente lo
+// pinta con una fecha impresa dentro, así que puesto al lado de la fecha real el
+// cliente puede leer la del icono y confundirse. Por eso las etiquetas van en
+// negrita de WhatsApp (*texto*) en vez de con emoji.
 function orderMessage(o){
   const lines = [];
   lines.push('¡Hola ' + o.name + '! 👋');
@@ -1412,15 +1417,15 @@ function orderMessage(o){
   let cuando = fmtDate(o.date);
   if(d === 0) cuando = 'hoy, ' + cuando;
   else if(d === 1) cuando = 'mañana, ' + cuando;
-  lines.push('📅 Entrega: ' + cuando + (o.time ? ' · ' + fmtTime(o.time) : ''));
-  if(o.info) lines.push('🍰 ' + o.info);
+  lines.push('*Entrega:* ' + cuando + (o.time ? ' · ' + fmtTime(o.time) : ''));
+  if(o.info) lines.push('*Pedido:* ' + o.info);
   const price = fmtPrice(o.price);
-  if(price) lines.push('💰 Total: ' + price);
+  if(price) lines.push('*Total:* ' + price);
   const dep = numOrNull(o.deposit);
   if(dep !== null && dep > 0){
-    lines.push('💵 Adelanto: ' + fmtPrice(dep));
+    lines.push('*Adelanto:* ' + fmtPrice(dep));
     const saldo = balanceOf(o);
-    if(saldo !== null && saldo > 0) lines.push('➡️ Falta por pagar: ' + fmtPrice(saldo));
+    if(saldo !== null && saldo > 0) lines.push('*Falta por pagar:* ' + fmtPrice(saldo));
   }
   lines.push('');
   lines.push("¡Gracias! — Rican's Sweets by Fany");
@@ -1449,7 +1454,9 @@ function cardHTML(o){
   else { dNum = dleft; dLabel = dleft === 1 ? 'día' : 'días'; }
 
   const price = fmtPrice(o.price);
-  const dateLine = `📅 ${fmtDate(o.date)}${o.time ? ' · ' + fmtTime(o.time) : ''}`;
+  // Sin emoji de calendario: la fuente lo dibuja con una fecha dentro y al lado
+  // de la fecha real se confunde.
+  const dateLine = `${fmtDate(o.date)}${o.time ? ' · ' + fmtTime(o.time) : ''}`;
 
   // Saldo pendiente: solo se muestra si hay un adelanto apuntado.
   const dep = numOrNull(o.deposit);
